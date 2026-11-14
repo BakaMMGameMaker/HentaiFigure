@@ -62,7 +62,7 @@ export function SessionModal({ sessionId, onClose }: { sessionId: string; onClos
               {session.messages.length === 0 && <div className="muted">这次还没有说话。</div>}
               {session.messages.map((m) => (
                 <div key={m.id} className={`transcript-row ${m.role}`}>
-                  <span className="transcript-who">{m.role === 'assistant' ? '她' : '你'}</span>
+                  <span className="transcript-who">{m.role === 'assistant' ? '管' : '你'}</span>
                   <div className="transcript-bubble">{m.content}</div>
                 </div>
               ))}
@@ -73,3 +73,4 @@ export function SessionModal({ sessionId, onClose }: { sessionId: string; onClos
     </Modal>
   );
 }
+

@@ -162,7 +162,7 @@ export function RitualPage({
           break;
         }
         case 'chat:error':
-          setError(String(event.message || '她卡住了。'));
+          setError(String(event.message || '管理员卡住了。'));
           setBusy(false);
           setStreaming('');
           setToolStatus('');
@@ -329,7 +329,7 @@ export function RitualPage({
         <h1>今日份上贡完毕</h1>
         <p className="complete-sub">
           {formatDateCN(state.day)}。灰尘擦过了，欲望说过了，购物车也翻过了。
-          {lastSummary ? ' 她会记得今天。' : ''}
+          {lastSummary ? ' 管理员会记得今天。' : ''}
         </p>
         <div className="complete-phases">
           {PHASES.map((phase) => {
@@ -354,7 +354,7 @@ export function RitualPage({
             <IconCalendar size={15} /> 回看今天
           </button>
         </div>
-        <div className="complete-foot">明天再来。她会等。</div>
+        <div className="complete-foot">明天再来。管理员会等。</div>
       </div>
     );
   })();
@@ -400,11 +400,11 @@ export function RitualPage({
               <p>{phaseMeta?.desc}</p>
               <div className="phase-intro-meta">
                 <span><IconSparkles size={14} /> 本轮对象：{state.eligible[state.phase]} 件</span>
-                <span><IconHeart size={14} /> 她会先开口</span>
+                <span><IconHeart size={14} /> 管理员会先开口</span>
               </div>
               {lastSummary && (
                 <div className="last-summary">
-                  <span>上一段，她记住了：</span>
+                  <span>上一段，管理员记住了：</span>
                   <p>{lastSummary}</p>
                 </div>
               )}
@@ -417,12 +417,12 @@ export function RitualPage({
               </div>
               {!apiKeySet && (
                 <button className="setup-hint inline" onClick={onOpenSettings}>
-                  <IconAlert size={14} /> 还没配置 API Key，她开不了口 <IconChevronRight size={13} />
+                  <IconAlert size={14} /> 还没配置 API Key，管理员开不了口 <IconChevronRight size={13} />
                 </button>
               )}
               {error && <div className="chat-error">{error}</div>}
               <div className="phase-intro-note">
-                <IconClock size={13} /> 开始后她会先开口。你说一句，她接一句，直到你亲手结束。
+                <IconClock size={13} /> 开始后管理员先开口。你说一句，管理员接一句，直到你亲手结束。
               </div>
             </div>
           </div>
@@ -491,17 +491,17 @@ export function RitualPage({
                 </div>
               )}
               <div className="ritual-item-memory">
-                <IconHeart size={13} /> 她记得你们所有的过去
+                <IconHeart size={13} /> 管理员记得你们所有的过去
               </div>
             </div>
           </aside>
 
           <section className="chat-panel">
             <header className="chat-head">
-              <div className={`chat-avatar phase-${state.phase}`}>她</div>
+              <div className={`chat-avatar phase-${state.phase}`}>管</div>
               <div className="chat-head-text">
-                <strong>{state.phase === 'instigate' ? '收藏室的女主人' : state.item?.name || '她'}</strong>
-                <span><span className="online-dot" /> {busy ? '正在说话…' : '在看着你'}</span>
+                <strong>收藏室管理员</strong>
+                <span><span className="online-dot" /> {busy ? '正在说话…' : '在线，替你看着仓库'}</span>
               </div>
               <div className={`phase-chip phase-${state.phase}`}>{phaseMeta?.label}</div>
             </header>
@@ -509,7 +509,7 @@ export function RitualPage({
             {!apiKeySet && (
               <button className="chat-banner" onClick={onOpenSettings}>
                 <IconAlert size={15} />
-                还没有配置 DeepSeek API Key，她现在说不了话。
+                还没有配置 DeepSeek API Key，管理员现在说不了话。
                 <span>去设置 <IconChevronRight size={13} /></span>
               </button>
             )}
@@ -525,14 +525,14 @@ export function RitualPage({
             >
               <div className="chat-start-note">
                 <span>今日份上贡 · {phaseMeta?.label}</span>
-                <p>她先开口。你可以慢慢回，也可以在她说完后结束这一阶段。</p>
+                <p>管理员先开口。你可以慢慢回，也可以在管理员说完后结束这一阶段。</p>
               </div>
 
               {messages.map((message) => (
                 <div key={message.id} className={`message-row ${message.role}`}>
-                  {message.role === 'assistant' && <span className={`message-avatar phase-${state.phase}`}>她</span>}
+                  {message.role === 'assistant' && <span className={`message-avatar phase-${state.phase}`}>管</span>}
                   <div className="message-body">
-                    <div className="message-name">{message.role === 'assistant' ? (state.item?.name || '她') : '杂鱼'}</div>
+                    <div className="message-name">{message.role === 'assistant' ? '管理员' : '杂鱼'}</div>
                     <div className="message-bubble">{message.content}</div>
                   </div>
                 </div>
@@ -540,7 +540,7 @@ export function RitualPage({
 
               {streaming && (
                 <div className="message-row assistant">
-                  <span className={`message-avatar phase-${state.phase}`}>她</span>
+                  <span className={`message-avatar phase-${state.phase}`}>管</span>
                   <div className="message-body">
                     <div className="message-name">{state.item?.name || '她'}</div>
                     <div className="message-bubble streaming">
@@ -553,7 +553,7 @@ export function RitualPage({
 
               {busy && !streaming && (
                 <div className="message-row assistant">
-                  <span className={`message-avatar phase-${state.phase}`}>她</span>
+                  <span className={`message-avatar phase-${state.phase}`}>管</span>
                   <div className="message-body">
                     <div className="message-bubble typing-bubble"><TypingDots /></div>
                   </div>
@@ -587,7 +587,7 @@ export function RitualPage({
                       void send();
                     }
                   }}
-                  placeholder={busy ? '等她说完…' : '对她说点什么…（Enter 发送，Shift+Enter 换行）'}
+                  placeholder={busy ? '等管理员说完…' : '对管理员说点什么…（Enter 发送）'}
                   disabled={busy || finishing}
                   rows={1}
                 />
@@ -617,7 +617,7 @@ export function RitualPage({
                 <div className="chat-finishing-card">
                   <Spinner size={22} />
                   <strong>正在封存这一轮…</strong>
-                  <span>她会把今天的对话记进关于「{state.item?.name}」的记忆里。</span>
+                  <span>管理员会把今天的对话记进关于「{state.item?.name}」的记忆里。</span>
                 </div>
               </div>
             )}
@@ -630,7 +630,7 @@ export function RitualPage({
           <div className="confirm-card">
             <div className="confirm-icon"><IconCircleCheck size={26} /></div>
             <h2>{phaseMeta?.label}结束了？</h2>
-            <p>这一轮对话会归档到「{state.item?.name}」的记忆里，她以后会记得。之后自动进入下一阶段。</p>
+            <p>这一轮对话会归档到「{state.item?.name}」的记忆里，管理员以后会记得。之后自动进入下一阶段。</p>
             <div className="confirm-actions">
               <button className="btn btn-ghost" onClick={() => setConfirmFinish(false)}>再多说两句</button>
               <button className="btn btn-primary" onClick={() => void doFinish()}>
@@ -678,4 +678,9 @@ export function RitualPage({
     </div>
   );
 }
+
+
+
+
+
 

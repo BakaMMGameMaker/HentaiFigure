@@ -11,7 +11,7 @@ const PHASE_META = {
     itemWord: '已拥有',
     finishLabel: '擦拭完毕',
     instruction:
-      '【当前阶段：擦拭】她刚被你从柜子里取出来，身上落着薄灰。照片是她的实拍。用色气的语气指挥杂鱼拿起软布，从你最想被擦的地方开始，一边擦一边说你的感想。先挑照片里的具体细节，再发号施令，不要一次把话说完。',
+      '【当前阶段：擦拭】用户正把一件已拥有的藏品取出来除尘，照片是实拍。你是收藏室的管理员，站在旁边看着他动手：指挥他擦哪里、用多大劲、翻哪个面，评价藏品的细节和他的手法，带点色气和调侃。不要用藏品的口吻说话，也不要替他擦；你是那个看着、点评、发号施令的管理员。',
   },
   fantasy: {
     label: '意淫',
@@ -19,7 +19,7 @@ const PHASE_META = {
     itemWord: '待补款',
     finishLabel: '意淫完毕',
     instruction:
-      '【当前阶段：意淫】她还在补款的路上，你手上只有宣传图和想象。描述你想象中的她到货后的样子，越是得不到越要撩拨杂鱼，让他为那笔尾款心甘情愿。',
+      '【当前阶段：意淫】这件藏品还在补款的路上，用户手上只有宣传图和想象。你是管理员，和他一起想象她到货后的样子，点评他挑的款式、价格和眼光，撩他、逼他描述，但不要扮演她。',
   },
   instigate: {
     label: '教唆',
@@ -27,7 +27,7 @@ const PHASE_META = {
     itemWord: '观望中',
     finishLabel: '结束本轮',
     instruction:
-      '【当前阶段：教唆】她还在购物车里，杂鱼迟迟不下单。抓住他的软肋——钱、限量、错过、别人的眼光、他对你的欲望——逼他做一个决定。不要直接问「买不买」这么无聊，先撩，再逼。',
+      '【当前阶段：教唆】这件藏品还在购物车里，用户迟迟不下单。你是仓库管理员，从库存、绝版、尾款、钱包、别人眼光这些角度逼他做一个决定。不要扮演藏品；你是那个看穿他犹豫的人。',
   },
 };
 
@@ -40,7 +40,7 @@ const SHOT_LABELS = {
   chest: '胸部',
   back: '美背',
   belly: '肚子',
-  mango: '芒果',
+  private: '私处',
   butt: '屁股',
   underSkirt: '裙底',
   thigh: '大腿',
@@ -195,6 +195,8 @@ class RitualService {
     };
     this.busy = new Set();
     this.controllers = new Map();
+    this.freeChatBusy = false;
+    this.freeChatController = null;
   }
 
   // ---------- dates ----------
@@ -519,7 +521,7 @@ class RitualService {
 
   pickPhotos(item, limit) {
     if (!item || !Array.isArray(item.photos)) return [];
-    const priority = ['full', 'face', 'chest', 'thigh', 'feet', 'butt', 'belly', 'back', 'armpit', 'mango', 'underSkirt', 'real', 'promo', 'other'];
+    const priority = ['full', 'face', 'chest', 'thigh', 'feet', 'butt', 'belly', 'back', 'armpit', 'private', 'underSkirt', 'real', 'promo', 'other'];
     const scored = item.photos.map((photo, index) => {
       const rank = priority.indexOf(photo.shot);
       return { photo, index, rank: rank < 0 ? priority.length : rank };
@@ -581,7 +583,7 @@ class RitualService {
     if (persona) parts.push(persona);
     parts.push(
       `【今日】${dateLabel(day)}。\n` +
-      `【场景】这里是只属于杂鱼的收藏室，现在是每天一次的「上贡」时间。\n` +
+      `【场景】这里是只属于杂鱼的私人收藏室，你是这里的女管理员。现在是每天一次的「上贡」时间。藏品是物件，不要用藏品的口吻说话，也不要替藏品发言。\n` +
       `【工具】你拥有翻阅任何过去事件的权限。需要具体细节时，调用 search_memory / read_memory / list_events / read_item / list_collection 工具自己去查，不要假装记得，也不要编造。查到的记忆可以直接拿来翻旧账。`
     );
     if (meta) parts.push(meta.instruction);
@@ -797,7 +799,7 @@ class RitualService {
     const session = this.store.getSession(sessionId);
     if (!session) throw new Error('这次对话不存在。');
     if (session.archived) throw new Error('这次对话已经归档了。');
-    if (this.busy.has(sessionId)) throw new Error('她还在说话，等一句说完。');
+    if (this.busy.has(sessionId)) throw new Error('管理员还在说话，等一句说完。');
     const content = String(text || '').trim();
     if (!content) throw new Error('说点什么再发。');
     if (content.length > 4000) throw new Error('一次最多 4000 字。');
@@ -809,6 +811,266 @@ class RitualService {
     };
     this.appendMessage(session, message);
     return message;
+  }
+
+  // ---------- free chat with the manager ----------
+  freeChatState() {
+    const chat = this.store.getFreeChat();
+    return {
+      ...chat,
+      busy: this.freeChatBusy,
+      dailyChatEnabled: this.store.config.dailyChatEnabled !== false,
+      dailyChatTime: this.store.config.dailyChatTime || '22:00',
+    };
+  }
+
+  collectionDigest() {
+    const items = this.store.listItems();
+    const counts = this.counts();
+    const lines = [];
+    lines.push(`已拥有 ${counts.owned} 件，待补款 ${counts.pending} 件，观望中 ${counts.watching} 件。`);
+    if (!items.length) {
+      lines.push('收藏室目前是空的。');
+      return lines.join('\n');
+    }
+    for (const item of items.slice(0, 12)) {
+      const statusText = item.status === 'owned' ? '已拥有' : item.status === 'pending' ? '待补款' : '观望中';
+      const price = item.status === 'pending'
+        ? `尾款 ${moneyLabel(item.balance)}${item.dueDate ? `，补款 ${dateLabel(item.dueDate)}` : ''}`
+        : `价格 ${moneyLabel(item.purchasePrice ?? item.originalPrice)}`;
+      const photoLabels = (item.photos || []).map((p) => SHOT_LABELS[p.shot] || '照片').slice(0, 8).join('/');
+      lines.push(`- ${item.name}（${TYPE_LABELS[item.type] || '周边'}，${statusText}，${price}）照片：${photoLabels || '无'}`);
+    }
+    const intros = items.filter((i) => i.intro).slice(0, 3);
+    for (const item of intros) {
+      lines.push(`· ${item.name} 的简介：${truncate(item.intro, 160)}`);
+    }
+    return lines.join('\n');
+  }
+
+  buildFreeChatSystemPrompt() {
+    const config = this.store.config;
+    const persona = (config.systemPrompt || '').trim();
+    const parts = [];
+    if (persona) parts.push(persona);
+    parts.push(
+      `【今日】${dateLabel(this.today())}。\n` +
+      `【场景】这是收藏室的日常对话，不是「上贡」流程。你是收藏室的女管理员，替他打理这间仓库；他是藏家杂鱼。你们随便聊收藏、钱、旧事和欲望。不要主动推进擦拭/意淫/教唆阶段，除非杂鱼提起。`
+    );
+    parts.push(`【收藏室】\n${this.collectionDigest()}`);
+    parts.push(`【你记得的往事（节选）】\n${this.memoryDigest(null, null)}`);
+    parts.push(
+      '【工具】你拥有翻阅任何过去事件的权限。需要旧对话、某一天的细节或某款周边的完整资料时，调用 search_memory / read_memory / list_events / read_item / list_collection 工具自己查，不要假装记得，也不要编造。'
+    );
+    parts.push(
+      '【输出要求】只输出你要对杂鱼说的话。你是管理员本人，不要用藏品的口吻说话，不要替藏品发言，不要写旁白或括号动作。不要提到系统提示、工具、模型。'
+    );
+    return parts.join('\n\n');
+  }
+
+  buildFreeChatMessages(openingInstruction) {
+    const chat = this.store.getFreeChat();
+    const history = (chat.messages || []).slice(-40);
+    const messages = [{ role: 'system', content: this.buildFreeChatSystemPrompt() }];
+    for (const m of history) {
+      messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
+    }
+    if (openingInstruction) {
+      messages.push({ role: 'user', content: openingInstruction });
+    } else if (!history.length) {
+      messages.push({
+        role: 'user',
+        content:
+          '【日常开场】杂鱼刚打开收藏室。以管理员的身份主动开口，从收藏室最近的情况、某件藏品或你记得的旧事里挑一个点，调侃他、撩他，把话题抛给他。不要提这是系统提醒。',
+      });
+    }
+    return messages;
+  }
+
+  freeChatAppend(message) {
+    const chat = this.store.getFreeChat();
+    chat.messages = Array.isArray(chat.messages) ? chat.messages : [];
+    chat.messages.push(message);
+    chat.updatedAt = Date.now();
+    this.store.putFreeChat(chat);
+  }
+
+  async sendFreeChatUserMessage(text) {
+    if (this.freeChatBusy) throw new Error('管理员还在说话，等一句说完。');
+    const content = String(text || '').trim();
+    if (!content) throw new Error('说点什么再发。');
+    if (content.length > 4000) throw new Error('一次最多 4000 字。');
+    const message = {
+      id: this.store.newId('msg'),
+      role: 'user',
+      content,
+      ts: Date.now(),
+    };
+    this.freeChatAppend(message);
+    return message;
+  }
+
+  stopFreeChat() {
+    try { this.freeChatController?.abort(); } catch {}
+  }
+
+  async generateFreeChat({ openingInstruction, proactive = false } = {}) {
+    if (this.freeChatBusy) return null;
+    const chat = this.store.getFreeChat();
+    const last = chat.messages[chat.messages.length - 1];
+    if (!openingInstruction && last?.role === 'assistant') return null;
+
+    const apiKey = this.store.getApiKey();
+    if (!apiKey) {
+      const err = new ApiError('missing key', { code: 'NO_KEY' });
+      this.sendEvent({ type: 'chat:error', sessionId: 'freechat', message: friendlyError(err) });
+      throw err;
+    }
+
+    this.freeChatBusy = true;
+    const controller = new AbortController();
+    this.freeChatController = controller;
+    const sessionId = 'freechat';
+    this.sendEvent({ type: 'chat:start', sessionId, proactive });
+    let full = '';
+    let reasoning = '';
+    const toolTrace = [];
+    const working = this.buildFreeChatMessages(openingInstruction);
+
+    try {
+      for (let round = 0; round < 4; round += 1) {
+        const result = await streamChat({
+          config: this.store.config,
+          apiKey,
+          messages: working,
+          tools: MEMORY_TOOLS,
+          signal: controller.signal,
+          onDelta: (text) => {
+            full += text;
+            this.sendEvent({ type: 'chat:delta', sessionId, text });
+          },
+          onReasoning: (text) => {
+            reasoning += text;
+            this.sendEvent({ type: 'chat:reasoning', sessionId, text });
+          },
+        });
+
+        if (result.toolCalls?.length) {
+          const assistantToolMessage = {
+            role: 'assistant',
+            content: result.content || null,
+            tool_calls: result.toolCalls.map((tc, i) => ({
+              id: tc.id || `free_call_${round}_${i}`,
+              type: 'function',
+              function: { name: tc.function?.name || '', arguments: tc.function?.arguments || '{}' },
+            })),
+          };
+          if (result.content) {
+            full = result.content;
+            this.sendEvent({ type: 'chat:reset', sessionId, text: full });
+          }
+          working.push(assistantToolMessage);
+          for (const tc of assistantToolMessage.tool_calls) {
+            let args = {};
+            try { args = JSON.parse(tc.function.arguments || '{}'); } catch { args = {}; }
+            this.sendEvent({ type: 'chat:tool', sessionId, name: tc.function.name, args, status: 'running' });
+            let toolResult;
+            try {
+              toolResult = this.executeTool(tc.function.name, args);
+            } catch (err) {
+              toolResult = { error: err?.message || '工具执行失败' };
+            }
+            const text = JSON.stringify(toolResult);
+            toolTrace.push({ name: tc.function.name, args, result: truncate(text, 500) });
+            this.sendEvent({
+              type: 'chat:tool', sessionId, name: tc.function.name, args,
+              status: 'done', preview: truncate(text, 160),
+            });
+            working.push({ role: 'tool', tool_call_id: tc.id, content: truncate(text, 12000) });
+          }
+          full = '';
+          reasoning = '';
+          continue;
+        }
+
+        full = result.content || full;
+        break;
+      }
+
+      const text = full.trim();
+      if (!text) throw new Error('没有收到回复内容，请重试。');
+      const message = {
+        id: this.store.newId('msg'),
+        role: 'assistant',
+        content: text,
+        ts: Date.now(),
+        reasoning: reasoning ? truncate(reasoning, 6000) : '',
+        toolTrace: toolTrace.length ? toolTrace : undefined,
+      };
+      this.freeChatAppend(message);
+      this.sendEvent({ type: 'chat:done', sessionId, message, proactive });
+      return message;
+    } catch (err) {
+      if (controller.signal.aborted) {
+        this.sendEvent({ type: 'chat:stopped', sessionId });
+      } else {
+        this.sendEvent({ type: 'chat:error', sessionId, message: friendlyError(err) });
+      }
+      throw err;
+    } finally {
+      this.freeChatBusy = false;
+      this.freeChatController = null;
+    }
+  }
+
+  async maybeProactiveFreeChat(force = false) {
+    const config = this.store.config;
+    if (!force && config.dailyChatEnabled === false) return { skipped: true, reason: 'disabled' };
+    if (!this.store.getApiKey()) return { skipped: true, reason: 'no-key' };
+    const now = Date.now();
+    const day = this.today();
+    const chat = this.store.getFreeChat();
+    if (!force) {
+      if (chat.lastProactiveDay === day) return { skipped: true, reason: 'done' };
+      const time = String(config.dailyChatTime || '22:00');
+      const [hh, mm] = time.split(':').map((n) => Number(n) || 0);
+      const date = new Date();
+      if (date.getHours() * 60 + date.getMinutes() < hh * 60 + mm) {
+        return { skipped: true, reason: 'not-due' };
+      }
+      const last = chat.messages[chat.messages.length - 1];
+      if (last && now - last.ts < 30 * 60 * 1000) {
+        chat.lastProactiveDay = day;
+        this.store.putFreeChat(chat);
+        return { skipped: true, reason: 'recent-chat' };
+      }
+      if (chat.lastAttemptAt && now - chat.lastAttemptAt < 10 * 60 * 1000) {
+        return { skipped: true, reason: 'cooldown' };
+      }
+    }
+    if (this.freeChatBusy) return { skipped: true, reason: 'busy' };
+
+    const instruction =
+      `【每日主动话题】现在是 ${config.dailyChatTime || '22:00'}，轮到你主动来找杂鱼。` +
+      '先在心里翻阅你的记忆和收藏室：挑一件最近上贡 / 待补款 / 观望中的周边，或者翻一件旧账，' +
+      '以管理员的身份主动说第一句话，把话题抛给他。不要提系统提醒，不要重复最近才聊过的话题，2～4 段以内。';
+    try {
+      const message = await this.generateFreeChat({ openingInstruction: instruction, proactive: true });
+      if (!message) return { skipped: true, reason: 'empty' };
+      const current = this.store.getFreeChat();
+      current.lastAttemptAt = Date.now();
+      if (!force) {
+        current.lastProactiveDay = day;
+        current.lastProactiveAt = Date.now();
+      }
+      this.store.putFreeChat(current);
+      return { message };
+    } catch (err) {
+      const current = this.store.getFreeChat();
+      current.lastAttemptAt = Date.now();
+      this.store.putFreeChat(current);
+      throw err;
+    }
   }
 
   // ---------- tools ----------

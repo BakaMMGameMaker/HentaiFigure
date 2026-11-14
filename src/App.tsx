@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AppInfo, Config, Item, ItemStatus, RitualState, UpdateInfo } from './types';
+import type { AppInfo, Config, FreeChatState, Item, ItemStatus, RitualState, UpdateInfo } from './types';
 import { TitleBar, Dock, type View } from './components/Chrome';
 import { HomePage } from './pages/HomePage';
 import { CollectionPage } from './pages/CollectionPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { MemoryPage } from './pages/MemoryPage';
 import { RitualPage } from './pages/RitualPage';
+import { ChatPage } from './pages/ChatPage';
 import { SettingsModal } from './components/SettingsModal';
 import { ItemEditor } from './components/ItemEditor';
 import { ItemDetail } from './components/ItemDetail';
@@ -29,6 +30,7 @@ export default function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [todayState, setTodayState] = useState<RitualState | null>(null);
+  const [freeChat, setFreeChat] = useState<FreeChatState | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('api');
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -40,6 +42,7 @@ export default function App() {
   const [calendarFocusDay, setCalendarFocusDay] = useState<string | null>(null);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [maximized, setMaximized] = useState(false);
+  const viewRef = useRef<View>('home');
   const [toast, setToast] = useState<ToastState>(null);
   const toastTimer = useRef<number | null>(null);
   const updateNotified = useRef(false);
@@ -59,21 +62,34 @@ export default function App() {
     setTodayState(nextState);
   }, []);
 
+  const refreshFreeChat = useCallback(async () => {
+    try {
+      const chat = await window.hf.chat.freeState();
+      setFreeChat(chat);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [info, cfg, itemList, state] = await Promise.all([
+        const [info, cfg, itemList, state, chatState] = await Promise.all([
           window.hf.app.info(),
           window.hf.config.get(),
           window.hf.items.list(),
           window.hf.ritual.state(),
+          window.hf.chat.freeState(),
         ]);
         if (!alive) return;
         setAppInfo(info);
         setConfig(cfg);
         setItems(itemList);
         setTodayState(state);
+        setFreeChat(chatState);
         setUpdateInfo(info.updateInfo || null);
         setMaximized(Boolean(info.isMaximized));
       } catch (err) {
@@ -101,10 +117,24 @@ export default function App() {
           updateNotified.current = true;
           showToast(`发现新版本 v${info.latestVersion}`, 'info');
         }
+        return;
+      }
+      if (event.type === 'chat:done' && event.sessionId === 'freechat') {
+        void refreshFreeChat();
+        return;
+      }
+      if (event.type === 'free:proactive') {
+        void refreshFreeChat();
+        if (viewRef.current !== 'chat') showToast('管理员来找你了。', 'info');
+        return;
+      }
+      if (event.type === 'free:focus') {
+        setView('chat');
+        void refreshFreeChat();
       }
     });
     return off;
-  }, [showToast]);
+  }, [showToast, refreshFreeChat]);
 
   useEffect(() => {
     const preventFileNavigation = (event: DragEvent) => event.preventDefault();
@@ -148,7 +178,7 @@ export default function App() {
   };
 
   const deleteItem = async (item: Item) => {
-    if (!window.confirm(`真的要把「${item.name}」从收藏室里删掉吗？照片和她的记忆会一起消失。`)) return;
+    if (!window.confirm(`真的要把「${item.name}」从收藏室里删掉吗？照片会一起消失，但已经归档的对话记忆会保留。`)) return;
     try {
       await window.hf.items.remove(item.id);
       setDetailItemId(null);
@@ -245,6 +275,7 @@ export default function App() {
             config={config}
             appInfo={appInfo}
             updateInfo={updateInfo}
+            freeChat={freeChat}
             onAdd={() => void openAdd()}
             onStart={() => void startRitual()}
             onResume={() => void resumeRitual()}
@@ -252,6 +283,7 @@ export default function App() {
             onOpenSettings={() => openSettings('api')}
             onGoCollection={goCollection}
             onUpdateClick={() => openSettings('update')}
+            onOpenChat={() => { setView('chat'); void refreshFreeChat(); }}
           />
         )}
 
@@ -280,6 +312,18 @@ export default function App() {
           />
         )}
 
+        {view === 'chat' && (
+          <ChatPage
+            config={config}
+            items={items}
+            apiKeySet={Boolean(config?.apiKeySet)}
+            onOpenSettings={() => openSettings('api')}
+            onOpenMemory={() => { setMemoryItemId(null); setView('memory'); }}
+            onStateChanged={refreshFreeChat}
+            toast={showToast}
+          />
+        )}
+
         {view === 'ritual' && ritualEntry && (
           <RitualPage
             initialState={ritualEntry}
@@ -299,6 +343,7 @@ export default function App() {
         ritualActive={Boolean(todayState?.status === 'in_progress' && todayState.exists)}
         onChange={(next) => {
           if (next === 'memory') setMemoryItemId(null);
+          if (next === 'chat') void refreshFreeChat();
           setView(next);
         }}
       />
@@ -313,6 +358,7 @@ export default function App() {
           onSaved={(next) => {
             setConfig(next);
             if (next.apiKeySet) refreshData().catch(() => {});
+            refreshFreeChat().catch(() => {});
           }}
           toast={showToast}
         />
@@ -343,4 +389,7 @@ export default function App() {
     </div>
   );
 }
+
+
+
 

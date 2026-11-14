@@ -26,7 +26,7 @@ export const SHOT_OPTIONS: { value: Shot; label: string; group: 'basic' | 'part'
   { value: 'chest', label: '胸部', group: 'part' },
   { value: 'back', label: '美背', group: 'part' },
   { value: 'belly', label: '肚子', group: 'part' },
-  { value: 'mango', label: '芒果', group: 'part' },
+  { value: 'private', label: '私处', group: 'part' },
   { value: 'butt', label: '屁股', group: 'part' },
   { value: 'underSkirt', label: '裙底', group: 'part' },
   { value: 'thigh', label: '大腿', group: 'part' },
@@ -86,6 +86,7 @@ export function todayKey(): string {
 export function photoUrl(file: string | undefined, thumb = false, fallback?: string): string {
   const target = thumb ? (file || fallback) : file;
   if (!target) return '';
+  if (/^(data:|blob:|https?:)/.test(target)) return target;
   return `hf-img://local/${target}`;
 }
 
@@ -197,4 +198,6 @@ export function pendingTail(items: Item[]): number {
     return sum + (Number(tail) || 0);
   }, 0);
 }
+
+
 

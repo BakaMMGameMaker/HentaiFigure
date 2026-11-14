@@ -2,7 +2,7 @@
 
 > 私人的手办收藏室 · 每日上贡。
 
-HentaiFigure 是一个**完全本地运行**的 Windows 桌面应用：桌面窗口、收藏图鉴、每日「擦拭 / 意淫 / 教唆」流程、上贡日历和会记住旧账的 DeepSeek 对话。界面和交互思路参考了 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)，但对话、记忆和收藏数据都由本应用自己管理，直接调用 DeepSeek 的 OpenAI 兼容 Chat Completions API。
+HentaiFigure 是一个**完全本地运行**的收藏管理应用（Windows 桌面 + Android 手机）：收藏图鉴、每日「擦拭 / 意淫 / 教唆」流程、上贡日历，以及一位会记住旧账、还会在每晚主动来找你的「收藏室女管理员」。界面和交互思路参考了 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)，但对话、记忆和收藏数据都由本应用自己管理，直接调用 DeepSeek 的 OpenAI 兼容 Chat Completions API。
 
 ---
 
@@ -14,7 +14,7 @@ HentaiFigure 是一个**完全本地运行**的 Windows 桌面应用：桌面窗
 2. 第一次启动会自动安装依赖并构建界面，可能需要一两分钟；之后每次启动只需几秒。
 3. 出现窗口后，点右上角的 **设置**，填入 DeepSeek API Key。
 
-已经打包好的免安装便携版在 **`release\HentaiFigure-1.0.0-portable.exe`**，双击也能直接打开（不需要 Node.js）。数据同样在 `%APPDATA%\HentaiFigure`。不过便携版不支持应用内自动更新；想用自动更新就双击 `启动.bat` 的源码方式运行。
+已经打包好的免安装便携版在 **`release\HentaiFigure-1.1.0-portable.exe`**，双击也能直接打开（不需要 Node.js）。数据同样在 `%APPDATA%\HentaiFigure`。不过便携版不支持应用内自动更新；想用自动更新就双击 `启动.bat` 的源码方式运行。
 
 想把快捷方式放到桌面，双击 **`创建桌面快捷方式.bat`**。
 
@@ -38,6 +38,7 @@ HentaiFigure 是一个**完全本地运行**的 Windows 桌面应用：桌面窗
 点「测试连接」确认能通。
 
 - API Key 只保存在本机，并使用 Electron 的系统安全存储（Windows DPAPI）加密；界面里不会回显完整 Key。
+- **手机版**的 Key 保存在应用沙箱的 IndexedDB 中，没有 DPAPI 那样的系统级加密；请给手机设置锁屏密码。
 - 默认模型 `deepseek-flash` 支持图片输入。如果你换成 `deepseek-chat` / `deepseek-reasoner` 等纯文本模型，应用会自动不发图片，只把照片标签和简介交给模型，避免接口报错。
 - 也支持任何 OpenAI 兼容的代理地址；如果代理带 `/v1`，直接填到 `/v1` 之前或之后都可以，程序会自动拼接 `/chat/completions`。
 
@@ -53,16 +54,16 @@ HentaiFigure 是一个**完全本地运行**的 Windows 桌面应用：桌面窗
 - **简介**：你最初看到她时的感想。DeepSeek 会从这里找话题。
 - **照片**：至少一张。可以点「上传照片」多选，也可以直接把图片拖进窗口。
   - 已拥有的**手办**必须至少有一张「全身照」。
-  - 其它可选部位：脸蛋、腋下、胸部、美背、肚子、芒果、屁股、裙底、大腿、玉足。
+  - 其它可选部位：脸蛋、腋下、胸部、美背、肚子、私处、屁股、裙底、大腿、玉足。
   - 每张照片都可以改标签、写备注、随时删除；删除最后一张会被拒绝。
 
 ### 3. 每日上贡
 
 首页中间的 **今日份上贡** 按钮会依次走完：
 
-1. **擦拭** — 从已拥有的周边里随机挑一款，她先看着照片开口，你回，她接，直到你点「擦拭完毕」。
+1. **擦拭** — 从已拥有的周边里随机挑一款，管理员先看着照片开口，你回，管理员接，直到你点「擦拭完毕」。
 2. **意淫** — 从待补款里随机挑一款，只能看宣传图，先想个够。
-3. **教唆** — 从购物车里挑一款，她会逼你下单；结束时选择：
+3. **教唆** — 从购物车里挑一款，管理员会逼你下单；结束时选择：
    - 下单了 · 等补款 → 移入待补款；
    - 下单了 · 已经到手 → 移入已拥有；
    - 还没 · 继续观望 → 保持原样，这段对话照样归档。
@@ -71,12 +72,22 @@ HentaiFigure 是一个**完全本地运行**的 Windows 桌面应用：桌面窗
 
 - 中途离开不会丢进度：首页会变成「继续上贡」。
 - 每个阶段的对话都会自动生成摘要，归档到这款周边的记忆里。
-- 她可以通过工具翻阅**任何**过去的上贡记录和对话（`search_memory` / `read_memory` / `list_events` / `read_item` / `list_collection`）。
+- 管理员可以通过工具翻阅**任何**过去的上贡记录和对话（`search_memory` / `read_memory` / `list_events` / `read_item` / `list_collection`）。
 
 ### 4. 日历与记忆
 
 - **日历**：有上贡的日子会打勾；点任意一天可以看到当天每个阶段的摘要和完整对话。
-- **记忆库**：按日期、阶段、周边筛选全部对话；可以重读原文。这些也是她翻旧账的素材。
+- **记忆库**：按日期、阶段、周边筛选全部对话；可以重读原文。这些也是管理员翻旧账的素材。
+
+### 5. 和管理员聊天
+
+首页的「收藏室管理员」卡片、或底部导航的 **对话**，可以进入日常聊天：
+
+- 不是上贡流程，随便聊收藏、尾款、旧事和今天的心情。
+- 管理员会带着全部上贡记忆和收藏室资料开口，也会自己调用记忆工具翻旧账。
+- **每日主动话题**：在「设置 → 管理员」里开启并设定时间（默认 22:00）。到点后管理员会读取记忆，主动发一条相关话题；如果那时应用没开，下次启动会补上。
+- 也可以在设置里点「让她来一条」，立刻生成一条主动话题。
+- 主动消息会弹系统通知；点通知直接打开对话。手机上则是在应用打开/切回前台时检查。
 
 ---
 
@@ -90,6 +101,7 @@ HentaiFigure 是一个**完全本地运行**的 Windows 桌面应用：桌面窗
 ├─ items.json        # 收藏与照片元数据
 ├─ sessions.json     # 每轮对话与记忆摘要
 ├─ daily.json        # 每日上贡进度与完成记录
+├─ freechat.json     # 与管理员的日常对话、主动话题记录
 ├─ images\           # 原图 + 缩略图
 └─ backups\          # 自动 / 手动备份（最多保留 12 份）
 ```
@@ -146,15 +158,74 @@ git push -u origin main
 
 ---
 
+## 手机版（Android APK）
+
+手机版和电脑共用同一套 React 界面与数据格式，用 Capacitor 包成 Android APK。聊天、收藏、上贡流程、日历、记忆、主动话题、同步和 GitHub 更新检查都在。
+
+### 安装
+
+已经构建好的 APK 在：
+
+```text
+release\HentaiFigure-1.1.0-android.apk
+```
+
+（源码构建产物在 `android/app/build/outputs/apk/debug/app-debug.apk`。）
+
+用数据线连接手机并开启 USB 调试后：
+
+```bat
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+也可以把 APK 发到手机上直接安装（需要允许安装未知来源应用）。当前 APK 使用 debug 签名，适合自己安装使用；如果要上架应用商店，需要自己配置 release 签名。
+
+### 自己构建 APK
+
+需要 Node.js 22+、JDK 17 或 21、Android SDK（compileSdk 35）：
+
+```bat
+npm run android:apk
+```
+
+脚本会构建 `mobile-dist/`、同步 Capacitor 资源并调用 Gradle。第一次构建会下载 Gradle 和 Android 依赖，可能需要几分钟。
+
+### 与电脑同步
+
+手机数据保存在应用自己的 IndexedDB 里；用 ZIP 同步包与电脑交换：
+
+1. **电脑 → 手机**：电脑「设置 → 数据 → 导出备份 ZIP」；把文件传到手机；手机「设置 → 数据 → 导入备份」。
+2. **手机 → 电脑**：手机「设置 → 数据 → 导出备份 ZIP」，用系统分享发到电脑；电脑「设置 → 数据 → 导入备份」。
+3. 同步包包含 `items.json`、`sessions.json`、`daily.json`、`freechat.json` 和 `images/`。
+4. 手机导入会按 ID **合并**收藏、对话和日常聊天；电脑导入是覆盖式，导入前会自动备份。建议同步前先各导出一次。
+5. 手机导出**不包含 API Key**；电脑导出里的加密 Key 手机导入时会忽略。
+
+### 手机上的 GitHub 更新检查
+
+「设置 → 更新」填写 `owner/repo` 并打开「启动时自动检查」，手机就会读取 GitHub Release（或 main 分支的 `package.json`）判断是否有新版本。
+
+手机版不能应用内替换 APK；发现新版本后会给出发布页入口，下载新 APK 覆盖安装即可。收藏和记忆在应用数据里，覆盖安装不会丢。实际上，`version` 要大于当前 `1.1.0` 才会提示。
+
+### 手机版限制
+
+- API Key 保存在应用沙箱的 IndexedDB 中（没有桌面端 DPAPI 那样的系统级加密）；请给手机设置锁屏密码。
+- 每日主动话题只在**应用打开或切回前台**时检查；没有常驻后台服务。
+- 系统通知使用的是应用内提示，不依赖通知权限。
+- 手机端照片会先压缩成 JPEG 再保存和发送，单张不超过 60MB。
+
+---
+
 ## 开发
 
 ```bat
 npm install
-npm run dev      :: Vite + Electron 热开发
-npm run type     :: TypeScript 类型检查
-npm run build    :: 只构建渲染层
-npm run start    :: 构建后启动
-npm run pack     :: 打包 Windows 便携版（release/）
+npm run dev           :: Vite + Electron 热开发
+npm run type          :: TypeScript 类型检查
+npm run build         :: 只构建 Windows 渲染层
+npm run build:mobile  :: 构建手机 Web 资源（mobile-dist/）
+npm run android:sync  :: 构建手机资源并同步到 Android 工程
+npm run android:apk   :: 构建 debug APK
+npm run pack          :: 打包 Windows 便携版（release/）
 ```
 
 目录结构：
@@ -169,9 +240,17 @@ electron/
   lib/updater.cjs     git / GitHub zip 更新
 src/
   App.tsx             页面与状态
-  pages/              首页、收藏、上贡、日历、记忆
+  pages/              首页、收藏、上贡、日历、对话、记忆
   components/         编辑器、设置、详情、对话弹窗
-  styles.css          全部视觉样式
+  styles.css          桌面视觉样式
+mobile/
+  main.tsx            手机入口
+  api.ts              window.hf 的浏览器/IndexedDB 实现
+  store.ts            手机本地存储
+  engine.ts           手机端上贡状态机、记忆、主动话题
+  sync.ts             ZIP 同步包导入导出
+  mobile.css          手机端响应式覆盖
+android/              Capacitor 生成的 Android 工程
 scripts/
   dev.cjs             开发启动器
   ensure-electron.cjs 修复 Electron 运行时
@@ -183,6 +262,7 @@ scripts/
 - `Item`：状态、类型、价格、简介、补款日、照片数组、各种 `last*At`。
 - `Session`：`phase`（wipe / fantasy / instigate）、`messages`、`summary`、`outcome`、`archived`。
 - `DailyRecord`：三个阶段的 `status`、`itemId`、`sessionId`，以及 `completedAt`。
+- `FreeChat`：日常聊天的 `messages`、`lastProactiveDay`；和上贡记忆分开存，但管理员可以用工具翻阅两边。
 - 工具可读取全部 `Session`，所以记忆中不需要冗余拷贝。
 
 ---
@@ -207,6 +287,18 @@ scripts/
 **中文在命令行里乱码**
 批处理文件已经 `chcp 65001`；如果仍乱码，把终端字体换成支持中文的字体即可，不影响应用。
 
+**手机版同步后照片不显示**
+同步时手机和电脑都要选择完整 ZIP。电脑导出时不要把 `images/` 单独拆出去；手机导入后应用会自动刷新。若只同步了 JSON，照片会缺。
+
+**手机版检查更新显示已是最新，但 GitHub 有新版本**
+手机端比较的是应用版本号（当前 `1.1.0`）和 Release/tag；发布时记得把 `package.json` 的 `version` 改大，并打上对应的 tag。
+
+**手机版没有在后台主动发消息**
+这是设计如此：Android 后台定时不可靠，手机版只在应用打开或切回前台时补检查一次。
+
+**Android 构建失败**
+确认 `D:\android-sdk` 存在 platform 35，且 `JAVA_HOME` 指向 JDK 17/21；首次构建会从 Gradle/Maven 下载依赖。如果网络慢，可以给 Gradle 配国内 Maven 镜像后重试。
+
 ---
 
 ## 内容说明
@@ -214,3 +306,6 @@ scripts/
 HentaiFigure 是给成年人个人使用的虚构角色收藏管理工具。所有角色、周边与对话均为虚构；请不要把真实人物带入对话。生成内容由你配置的 DeepSeek API 产生，请遵守当地法律、DeepSeek 的服务条款以及你所在平台的规定。
 
 本项目受 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)（MIT）启发；未直接复制其源码。界面与代码以 MIT 协议发布，详见 [LICENSE](LICENSE)。
+
+
+

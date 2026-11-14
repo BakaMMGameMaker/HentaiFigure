@@ -1,7 +1,7 @@
 {
   "name": "hentaifigure",
   "productName": "HentaiFigure",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "HentaiFigure — 私人的手办收藏室与今日份上贡",
   "main": "electron/main.cjs",
   "author": "HentaiFigure",
@@ -10,6 +10,10 @@
   "scripts": {
     "dev": "node scripts/dev.cjs",
     "build": "vite build",
+    "build:mobile": "vite build --config vite.mobile.config.ts && node scripts/mobile-postbuild.cjs",
+    "android:sync": "npm run build:mobile && cap sync android",
+    "android:apk": "npm run android:sync && cd android && gradlew.bat assembleDebug",
+    "android:install": "adb install -r android/app/build/outputs/apk/debug/app-debug.apk",
     "start": "npm run build && electron .",
     "app": "electron .",
     "type": "tsc --noEmit",
@@ -20,11 +24,18 @@
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
+    "@capacitor/android": "^7.6.10",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/cli": "^7.6.10",
+    "@capacitor/core": "^7.6.10",
+    "@capacitor/filesystem": "^7.1.9",
+    "@capacitor/share": "^7.0.4",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^37.2.6",
     "electron-builder": "^26.0.12",
+    "fflate": "^0.8.3",
     "typescript": "^5.8.3",
     "vite": "^7.1.3"
   }

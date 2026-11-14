@@ -3,12 +3,13 @@ export type ItemType = 'figure' | 'acrylic' | 'pillow' | 'poster' | 'badge' | 'i
 export type Phase = 'wipe' | 'fantasy' | 'instigate';
 export type Shot =
   | 'promo' | 'real' | 'full' | 'face' | 'armpit' | 'chest' | 'back' | 'belly'
-  | 'mango' | 'butt' | 'underSkirt' | 'thigh' | 'feet' | 'other';
+  | 'private' | 'butt' | 'underSkirt' | 'thigh' | 'feet' | 'other';
 
 export interface Photo {
   id: string;
   file: string;
   thumbFile?: string;
+  syncPath?: string;
   shot: Shot;
   caption?: string;
   width?: number;
@@ -96,6 +97,8 @@ export interface Config {
   systemPrompt: string;
   autoUpdate: boolean;
   updateRepo: string;
+  dailyChatEnabled: boolean;
+  dailyChatTime: string;
   apiKeySet: boolean;
   apiKeyPreview: string;
   apiKeyStoredEncrypted: boolean;
@@ -126,6 +129,7 @@ export interface UpdateInfo {
   branch?: string;
   remote?: string;
   htmlUrl?: string;
+  downloadUrl?: string;
   checkedAt?: number;
 }
 
@@ -182,6 +186,16 @@ export interface HfEvent {
   [key: string]: unknown;
 }
 
+export interface FreeChatState {
+  messages: ChatMessage[];
+  busy: boolean;
+  lastProactiveDay: string | null;
+  lastProactiveAt: number | null;
+  lastAttemptAt?: number | null;
+  dailyChatEnabled: boolean;
+  dailyChatTime: string;
+  updatedAt?: number;
+}
 export interface HfApi {
   app: { info(): Promise<AppInfo> };
   window: {
@@ -221,6 +235,11 @@ export interface HfApi {
     send(sessionId: string, text: string): Promise<ChatMessage>;
     generate(sessionId: string): Promise<{ started: boolean }>;
     stop(sessionId: string): Promise<boolean>;
+    freeState(): Promise<FreeChatState>;
+    freeSend(text: string): Promise<ChatMessage>;
+    freeGenerate(forceNew?: boolean): Promise<{ started: boolean }>;
+    freeStop(): Promise<boolean>;
+    freeProactive(): Promise<{ message?: ChatMessage; skipped?: boolean; reason?: string }>;
   };
   calendar: {
     month(year: number, month: number): Promise<Record<string, CalendarDay>>;
@@ -250,4 +269,9 @@ declare global {
     hf: HfApi;
   }
 }
+
+
+
+
+
 

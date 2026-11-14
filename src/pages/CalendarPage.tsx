@@ -87,7 +87,7 @@ export function CalendarPage({
           <div className="eyebrow">DAILY OFFERING</div>
           <h1>上贡日历</h1>
           <p className="page-sub">
-            每一次上贡都会在这里留下一个勾。她记得所有日子，你也可以点开看。
+            每一次上贡都会在这里留下一个勾。管理员记得所有日子，你也可以点开看。
           </p>
         </div>
         <button className="btn btn-ghost" onClick={goToday}>
@@ -202,3 +202,4 @@ export function CalendarPage({
     </div>
   );
 }
+

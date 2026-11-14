@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">HentaiFigure</string>
+    <string name="title_activity_main">HentaiFigure</string>
+    <string name="package_name">com.hentaifigure.app</string>
+    <string name="custom_url_scheme">com.hentaifigure.app</string>
+</resources>

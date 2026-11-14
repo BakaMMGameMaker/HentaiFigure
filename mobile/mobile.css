@@ -1,0 +1,321 @@
+/* Mobile / Capacitor overrides — loaded after the desktop stylesheet. */
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html, body, #root { height: 100%; }
+body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app { height: 100dvh; }
+
+/* ---------- title bar ---------- */
+.titlebar {
+  height: calc(48px + var(--safe-top));
+  flex: 0 0 calc(48px + var(--safe-top));
+  padding: var(--safe-top) 8px 0 10px;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+}
+.titlebar-left { min-width: 0; }
+.add-button {
+  height: 30px;
+  padding: 0 11px 0 9px;
+  font-size: 12px;
+}
+.titlebar-brand { gap: 6px; justify-self: center; }
+.titlebar-mark svg { width: 17px; height: 17px; }
+.titlebar-name { font-size: 13px; letter-spacing: 0.08em; }
+.titlebar-tag { display: none; }
+.titlebar-right { gap: 2px; }
+.titlebar-divider, .window-button { display: none; }
+.titlebar-icon { display: inline-flex; width: 36px; height: 32px; }
+.titlebar-update { height: 25px; padding: 0 8px; font-size: 10px; }
+
+/* ---------- dock ---------- */
+.dock {
+  bottom: calc(8px + var(--safe-bottom));
+  padding: 5px;
+  gap: 1px;
+  border-radius: 17px;
+  width: min(calc(100vw - 18px), 380px);
+  justify-content: space-around;
+}
+.dock-item { width: 20%; padding: 6px 2px 5px; font-size: 9.5px; gap: 2px; border-radius: 11px; }
+.dock-icon svg { width: 17px; height: 17px; }
+
+/* ---------- pages ---------- */
+.app-main { min-height: 0; }
+.page {
+  padding: 16px 14px calc(92px + var(--safe-bottom));
+  height: 100%;
+}
+.page-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.page-head h1 { font-size: 27px; margin: 2px 0 4px; }
+.page-sub { font-size: 11.5px; line-height: 1.7; }
+.page-head > .btn, .page-head > .icon-button { align-self: flex-start; }
+.eyebrow { font-size: 8.5px; letter-spacing: 0.22em; }
+
+.btn { height: 38px; padding: 0 16px; font-size: 12.5px; }
+.btn-small { height: 28px; font-size: 11px; }
+
+/* ---------- home ---------- */
+.home-page { padding-top: 10px; justify-content: flex-start; min-height: 100%; }
+.hero { width: 100%; padding-top: 4px; }
+.hero-kicker { font-size: 9.5px; letter-spacing: 0.2em; gap: 8px; }
+.hero-kicker-line { width: 18px; }
+.hero-date { display: none; }
+.hero-greeting-wrap { padding: 0 2px; margin-top: 18px; }
+.hero-greeting { font-size: clamp(27px, 8.4vw, 38px); line-height: 1.45; max-width: 100%; }
+.hero-sub { margin-top: 12px; font-size: 10.5px; letter-spacing: 0.03em; }
+.hero-actions { margin-top: 22px; flex-direction: column; gap: 10px; width: 100%; }
+.offering-button { width: 100%; max-width: 320px; height: 54px; font-size: 14.5px; padding: 0 22px; justify-content: center; }
+.reroll-button { font-size: 10.5px; }
+.today-link { margin-top: 12px; font-size: 10.5px; }
+.home-stats { grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 26px; width: 100%; }
+.stat-card { padding: 11px 11px; gap: 9px; }
+.stat-glyph { width: 32px; height: 32px; border-radius: 9px; font-size: 14px; }
+.stat-number { font-size: 16px; }
+.stat-label { font-size: 9px; }
+.stat-money .stat-number { font-size: 13px; }
+.home-chat-entry { width: 100%; margin-top: 12px; padding: 11px 12px; gap: 10px; border-radius: 13px; }
+.home-chat-avatar { width: 38px; height: 38px; font-size: 14px; }
+.home-chat-title { font-size: 11.5px; }
+.home-chat-preview { font-size: 10px; }
+.home-chat-side .home-chat-schedule { display: none; }
+.home-chat-side > svg { display: none; }
+.home-chat-badge { font-size: 8px; padding: 1px 6px; }
+.home-foot { margin-top: 22px; font-size: 9px; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.home-foot span:nth-child(3) { display: none; }
+.home-settings-link { display: none; }
+.setup-hint { font-size: 10.5px; padding: 8px 12px; margin-top: 14px; text-align: left; }
+.hero-empty { font-size: 11px; margin-top: 16px; }
+.hero-progress { margin-top: 16px; gap: 5px; }
+.mini-phase { height: 25px; padding: 0 9px; font-size: 9px; }
+.mini-phase em { max-width: 70px; }
+.update-banner { margin-top: 0; height: 29px; font-size: 10px; }
+
+/* ---------- collection ---------- */
+.collection-toolbar { flex-direction: column; align-items: stretch; gap: 9px; }
+.filter-tabs { overflow-x: auto; width: 100%; scrollbar-width: none; }
+.filter-tabs::-webkit-scrollbar { display: none; }
+.filter-tab { height: 30px; padding: 0 11px; font-size: 11px; flex: 0 0 auto; }
+.search-box { width: 100%; min-width: 0; height: 34px; }
+.item-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.item-cover { aspect-ratio: 3 / 4.1; }
+.item-status { top: 7px; left: 7px; font-size: 8.5px; padding: 2px 7px; }
+.item-warning { top: 7px; right: 7px; font-size: 8px; padding: 2px 5px; }
+.item-edit { display: none; }
+.item-body { padding: 9px 10px 11px; }
+.item-type { font-size: 8px; margin-bottom: 3px; }
+.item-body h3 { font-size: 12px; min-height: 36px; line-height: 1.45; }
+.item-sub { font-size: 9px; }
+.item-meta { margin-top: 8px; padding-top: 7px; }
+.item-price { font-size: 10.5px; gap: 3px; }
+.item-price svg { width: 11px; height: 11px; }
+.item-due { font-size: 8.5px; padding: 1px 5px; }
+.item-more { display: none; }
+.collection-summary { justify-content: flex-start; margin-top: 18px; }
+.empty-state { padding: 56px 16px; }
+
+/* ---------- editor ---------- */
+.modal-overlay { padding: 6px; }
+.modal-editor { width: 100%; height: 96dvh; max-height: 96dvh; border-radius: 16px; }
+.editor-head { padding: 16px 16px 13px; }
+.editor-head h2 { font-size: 20px; }
+.editor-body { grid-template-columns: 1fr; overflow-y: auto; }
+.editor-main { overflow: visible; padding: 16px 16px 22px; }
+.editor-photos { overflow: visible; padding: 18px 16px 26px; border-left: none; border-top: 1px solid var(--border); }
+.status-grid { grid-template-columns: 1fr; gap: 7px; }
+.status-card { padding: 10px 11px; }
+.status-text small { font-size: 9.5px; }
+.price-grid { grid-template-columns: 1fr 1fr; gap: 9px; }
+.field-row { grid-template-columns: 1fr; gap: 11px; }
+.type-chips { gap: 5px; }
+.type-chip { height: 27px; padding: 0 10px; font-size: 10.5px; }
+.photo-list { grid-template-columns: 1fr 1fr; gap: 8px; }
+.editor-foot { padding: 12px 14px; gap: 10px; flex-wrap: wrap; }
+.editor-error { flex-basis: 100%; font-size: 10.5px; }
+.editor-actions { width: 100%; justify-content: flex-end; }
+.prompt-textarea { min-height: 260px; }
+
+/* ---------- detail / session ---------- */
+.modal-detail, .modal-session { width: 100%; height: 94dvh; max-height: 94dvh; border-radius: 16px; }
+.detail { grid-template-columns: 1fr; overflow-y: auto; }
+.detail-gallery { min-height: 300px; }
+.detail-main { min-height: 260px; }
+.detail-info { padding: 16px; overflow: visible; }
+.detail-head h2 { font-size: 18px; }
+.detail-prices { grid-template-columns: 1fr 1fr; gap: 6px; }
+.detail-actions { padding-top: 16px; }
+.session-head { padding: 16px; }
+.session-body { padding: 14px 16px 20px; }
+.transcript-bubble { max-width: 86%; font-size: 12px; }
+
+/* ---------- settings ---------- */
+.modal-settings { width: 100%; height: 96dvh; max-height: 96dvh; border-radius: 16px; }
+.settings { flex-direction: column; }
+.settings-nav {
+  width: 100%;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  overflow-x: auto;
+  padding: 8px 10px;
+  border-right: none;
+  border-bottom: 1px solid var(--border);
+  gap: 4px;
+  scrollbar-width: none;
+}
+.settings-nav::-webkit-scrollbar { display: none; }
+.settings-brand, .settings-nav-foot { display: none; }
+.settings-tab { height: 32px; padding: 0 10px; font-size: 11px; flex: 0 0 auto; border-radius: 8px; gap: 6px; }
+.settings-tab svg { width: 15px; height: 15px; }
+.settings-head { padding: 16px 16px 12px; }
+.settings-head h2 { font-size: 20px; }
+.settings-body { padding: 16px; }
+.settings-section { padding-bottom: 20px; margin-bottom: 20px; }
+.settings-foot { padding: 12px 16px; flex-wrap: wrap; }
+.settings-error { flex-basis: 100%; font-size: 10.5px; }
+.settings-actions { width: 100%; justify-content: flex-end; }
+.field-row { grid-template-columns: 1fr; }
+.key-row { flex-direction: column; }
+.key-row .btn { align-self: flex-end; }
+.data-grid { grid-template-columns: 1fr; }
+.about-rows div { font-size: 10.5px; }
+.about-rows b { font-size: 10px; }
+.update-version { gap: 10px; }
+.update-version strong { font-size: 14px; }
+.update-badge { margin-left: 0; }
+.update-actions { flex-wrap: wrap; }
+.update-safety { font-size: 9.5px !important; }
+
+/* ---------- chat ---------- */
+.freechat-page { padding: 12px 12px calc(88px + var(--safe-bottom)); }
+.freechat-head { flex-direction: column; align-items: stretch; gap: 9px; margin-bottom: 9px; }
+.freechat-identity { gap: 10px; }
+.freechat-avatar { width: 42px; height: 42px; font-size: 15px; }
+.freechat-identity h1 { font-size: 21px; }
+.freechat-identity p { font-size: 9.5px; line-height: 1.5; }
+.freechat-head-actions { width: 100%; justify-content: space-between; gap: 6px; }
+.freechat-schedule { font-size: 9px; padding: 4px 8px; }
+.freechat-head-actions .btn { height: 32px; padding: 0 11px; font-size: 11px; }
+.freechat-head-actions .icon-button { width: 32px; height: 32px; }
+.freechat-layout { grid-template-columns: 1fr; flex: 1; min-height: 0; }
+.freechat-side { display: none; }
+.freechat-panel { flex: 1; min-height: 0; }
+.freechat-scroll { padding: 14px 12px 8px; gap: 12px; }
+.freechat-welcome { padding: 34px 14px; }
+.freechat-welcome h2 { font-size: 20px; }
+.message-bubble { font-size: 12.5px; line-height: 1.8; padding: 10px 12px; }
+.message-row { max-width: 94%; }
+.chat-head { padding: 10px 12px; }
+.chat-head-text strong { font-size: 11.5px; }
+.chat-input-area { padding: 9px 10px 10px; }
+.chat-input-box textarea { font-size: 16px; min-height: 38px; }
+.chat-input-box { padding: 5px 6px 5px 11px; }
+.send-button { width: 34px; height: 34px; }
+.chat-actions { font-size: 9px; gap: 6px; flex-wrap: wrap; }
+.chat-actions .muted.small { font-size: 8.5px; }
+.chat-banner { margin: 8px 10px 0; font-size: 10px; padding: 8px 10px; }
+
+/* ---------- ritual ---------- */
+.ritual-page { padding: 10px 10px calc(84px + var(--safe-bottom)); }
+.ritual-top { gap: 8px; padding-bottom: 8px; }
+.back-button { font-size: 10px; padding: 5px 6px; }
+.ritual-day { display: none; }
+.stepper { gap: 2px; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+.stepper::-webkit-scrollbar { display: none; }
+.step { padding: 4px 7px; gap: 5px; font-size: 10px; flex: 0 0 auto; }
+.step-dot { width: 17px; height: 17px; font-size: 8px; }
+.step-name { display: none; }
+.ritual-layout { grid-template-columns: 1fr; gap: 0; flex: 1; min-height: 0; }
+.ritual-item { display: none; }
+.chat-panel { min-height: 0; }
+.ritual-intro { padding-top: 0; }
+.phase-intro-card { grid-template-columns: 1fr; padding: 22px 18px; gap: 10px; margin-top: 10px; }
+.phase-intro-side { flex-direction: row; align-items: baseline; gap: 10px; }
+.phase-intro-number { font-size: 40px; }
+.phase-intro-cn { font-size: 15px; }
+.phase-intro-main h1 { font-size: 23px; margin-top: 6px; }
+.phase-intro-main > p { font-size: 11.5px; }
+.phase-intro-actions { flex-wrap: wrap; gap: 8px; }
+.phase-intro-meta { gap: 12px; }
+.phase-intro-note { font-size: 9.5px; }
+.intro-phase { padding: 10px 12px; gap: 10px; }
+.intro-phase p { font-size: 9px; }
+.complete-stamp { width: 84px; height: 84px; margin-bottom: 18px; }
+.ritual-complete h1 { font-size: 30px; }
+.complete-sub { font-size: 11px; }
+.complete-phases { width: 100%; }
+.complete-actions { flex-direction: column; width: 100%; max-width: 300px; }
+.complete-actions .btn { width: 100%; }
+.chat-start-note p { font-size: 9px; }
+.chat-finishing-card { padding: 20px 22px; }
+
+/* ---------- calendar ---------- */
+.calendar-layout { grid-template-columns: 1fr; gap: 12px; }
+.calendar-card { padding: 12px 10px 14px; }
+.calendar-head { padding-bottom: 10px; }
+.calendar-title strong { font-size: 17px; }
+.calendar-title span { font-size: 10px; }
+.calendar-legend { font-size: 8.5px; gap: 10px; padding-bottom: 8px; }
+.calendar-weekdays span { font-size: 8.5px; }
+.calendar-grid { gap: 3px; }
+.day-cell { height: 46px; border-radius: 7px; }
+.day-number { font-size: 10px; }
+.day-stamp { width: 13px; height: 13px; top: 3px; right: 4px; }
+.day-stamp svg { width: 9px; height: 9px; }
+.day-mini { display: none; }
+.calendar-detail { min-height: 260px; padding: 14px; }
+.calendar-detail-empty { height: 220px; }
+.detail-day-head h2 { font-size: 17px; }
+.day-session { padding: 10px; }
+.day-session-item { font-size: 11px; }
+.day-session p { font-size: 9.5px; }
+.memory-stats { gap: 18px; }
+.memory-stats b { font-size: 19px; }
+.memory-toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
+.memory-filters { flex-direction: column; align-items: stretch; }
+.memory-filters .select-wrap { width: 100%; }
+.memory-filters .select-wrap select { width: 100%; }
+.memory-cards { grid-template-columns: 1fr; }
+.memory-card-summary { min-height: 0; }
+.memory-timeline { gap: 22px; }
+.memory-footnote { margin-top: 22px; font-size: 8.5px; text-align: center; }
+
+/* ---------- misc ---------- */
+.toast { bottom: calc(82px + var(--safe-bottom)); max-width: calc(100vw - 28px); font-size: 11.5px; padding: 10px 14px; }
+.lightbox { padding: 2vh 3vw; }
+.lightbox-image { max-width: 94vw; max-height: 76vh; }
+.lightbox-nav { width: 38px; height: 38px; }
+.modal-confirm, .modal-instigate { width: calc(100vw - 18px); }
+.confirm-card { padding: 22px 18px 20px; }
+.instigate-card { padding: 18px 16px 16px; }
+.instigate-card h2 { font-size: 23px; }
+.about-hero { align-items: flex-start; }
+.about-hero .brand-mark { width: 48px; height: 48px; font-size: 15px; }
+
+/* overflow + type fixes */
+.editor-body, .editor-main, .editor-photos { overflow-x: hidden; }
+.editor-body { overflow-y: auto; }
+.settings-body, .detail, .detail-info, .session-body { overflow-x: hidden; }
+.hero-greeting { font-size: clamp(24px, 7.6vw, 34px); text-wrap: pretty; }
+@media (max-width: 420px) {
+  .hero-greeting { font-size: 27px; }
+  .home-chat-preview { max-width: 220px; }
+}
+
+/* keep settings footer reachable */
+.settings { height: 100%; min-height: 0; }
+.settings-main { min-height: 0; }
+.settings-body { min-height: 0; flex: 1; overflow-y: auto; }

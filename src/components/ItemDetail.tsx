@@ -103,7 +103,7 @@ export function ItemDetail({
 
           <div className="detail-actions">
             <button className="btn btn-primary" onClick={onEdit}><IconPencil size={15} /> 编辑</button>
-            <button className="btn btn-soft" onClick={onViewMemory}><IconBook size={15} /> 她的记忆</button>
+            <button className="btn btn-soft" onClick={onViewMemory}><IconBook size={15} /> 相关记忆</button>
             <button className="btn btn-danger-ghost" onClick={onDelete}><IconTrash size={15} /> 删除</button>
           </div>
         </div>
@@ -114,3 +114,4 @@ export function ItemDetail({
     </Modal>
   );
 }
+

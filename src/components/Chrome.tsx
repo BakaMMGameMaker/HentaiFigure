@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   IconBloom, IconMinus, IconPlus, IconSettings, IconSquare, IconX,
-  IconHome, IconGallery, IconCalendar, IconBook,
+  IconHome, IconGallery, IconCalendar, IconBook, IconChat,
 } from '../icons';
 
 export function TitleBar({
@@ -55,12 +55,13 @@ export function TitleBar({
   );
 }
 
-export type View = 'home' | 'collection' | 'calendar' | 'memory' | 'ritual';
+export type View = 'home' | 'collection' | 'calendar' | 'memory' | 'chat' | 'ritual';
 
 const DOCK_ITEMS: { view: View; label: string; icon: ReactNode }[] = [
   { view: 'home', label: '首页', icon: <IconHome size={18} /> },
   { view: 'collection', label: '收藏', icon: <IconGallery size={18} /> },
   { view: 'calendar', label: '日历', icon: <IconCalendar size={18} /> },
+  { view: 'chat', label: '对话', icon: <IconChat size={18} /> },
   { view: 'memory', label: '记忆', icon: <IconBook size={18} /> },
 ];
 
@@ -91,3 +92,4 @@ export function Dock({
     </nav>
   );
 }
+

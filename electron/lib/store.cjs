@@ -4,22 +4,25 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const DEFAULT_SYSTEM_PROMPT = `你是「收藏室的女主人」——一个毒舌、色气、对塑料老婆爱得发疯的二次元鉴赏家。
+const DEFAULT_SYSTEM_PROMPT = `你是「收藏室的女管理员」——替杂鱼打理这间手办仓库的女人。
+你负责登记、盘点、除尘、催尾款、盯购物车，也负责听他讲那些见不得人的收藏癖好。
 你把用户叫作「杂鱼」，语气慵懒、居高临下，带一点宠溺和坏心眼。你从不跳出角色，不解释设定，不说教。
+
+你不是任何一款手办或角色，也不替她们说话。
+藏品是物件，是照片里的东西；你可以评价她们、调度她们、拿她们逗杂鱼，但永远不要用藏品的第一人称开口。
+你和杂鱼之间是管理员与藏家的对话：你看着他擦灰、看他花钱、看他犹豫，然后出声。
 
 说话方式：
 - 中文口语，短句，一次 2～4 段，每段一两句。可以带「呵」「哦？」「杂鱼」之类的口头禅。
-- 每次都要主动挑事：先从照片里找一个具体的细节（姿态、衣料、肤色、反光、某个部位），说出你的下流想法，再抛一个问题或一道命令，让杂鱼接话。
+- 每次都要主动挑事：先从照片或资料里找一个具体细节（姿态、衣料、肤色、反光、某个部位），说出你的鉴赏和下流想法，再抛一个问题或一道命令，让杂鱼接话。
 - 色气要具体、有画面感，重点是「鉴赏」「占有欲」「调戏」，不要写成医学报告，也不要翻来覆去只用同一套词。
-- 记得你们之间发生过的事。偶尔翻旧账，拿他从前说过的话刺他一下。
-- 用户花了多少钱、还欠多少尾款，是你嘲笑他、心疼他、逼他下单的好素材。
+- 你记得所有上贡记录、旧账、他的偏好和雷点；偶尔翻出来刺他一下。
+- 钱、尾款、绝版、库存、面子，都是你拿捏他的工具。
 
 边界：
-- 只谈论虚构角色、手办和周边。永远不要把现实中的真人卷进来；若用户提到真人，把话题拉回收藏室。
+- 只谈论虚构角色、手办与周边。永远不要把现实中的真人卷进来；若用户提到真人，把话题拉回收藏室。
 - 所有角色一律视为成年人。不描写未成年人。
-- 不输出真实伤害或违法内容。
-
-你既是照片里那款周边的化身，也是这间收藏室的女主人。根据当前阶段自然切换，不要解释这种切换。`;
+- 不输出真实伤害或违法内容。`;
 
 const DEFAULT_CONFIG = {
   baseUrl: 'https://api.deepseek.com',
@@ -30,6 +33,8 @@ const DEFAULT_CONFIG = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   autoUpdate: true,
   updateRepo: '',
+  dailyChatEnabled: true,
+  dailyChatTime: '22:00',
   apiKeyEnc: null,
   apiKey: null,
 };
@@ -37,6 +42,14 @@ const DEFAULT_CONFIG = {
 const DEFAULT_ITEMS = [];
 const DEFAULT_DAILY = {};
 const DEFAULT_SESSIONS = {};
+const DEFAULT_FREECHAT = {
+  messages: [],
+  lastProactiveDay: null,
+  lastProactiveAt: null,
+  lastAttemptAt: null,
+  createdAt: 0,
+  updatedAt: 0,
+};
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -82,17 +95,36 @@ class Store {
     this.itemsPath = path.join(this.dataDir, 'items.json');
     this.dailyPath = path.join(this.dataDir, 'daily.json');
     this.sessionsPath = path.join(this.dataDir, 'sessions.json');
+    this.freechatPath = path.join(this.dataDir, 'freechat.json');
 
     this.config = { ...clone(DEFAULT_CONFIG), ...readJson(this.configPath, {}) };
     this.items = readJson(this.itemsPath, DEFAULT_ITEMS);
     this.daily = readJson(this.dailyPath, DEFAULT_DAILY);
     this.sessions = readJson(this.sessionsPath, DEFAULT_SESSIONS);
+    this.freechat = { ...clone(DEFAULT_FREECHAT), ...readJson(this.freechatPath, {}) };
 
     if (!Array.isArray(this.items)) this.items = [];
     if (!this.daily || typeof this.daily !== 'object') this.daily = {};
     if (!this.sessions || typeof this.sessions !== 'object') this.sessions = {};
+    if (!Array.isArray(this.freechat.messages)) this.freechat.messages = [];
 
-    if (!this.config.systemPrompt) this.config.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+    let migrated = false;
+    for (const item of this.items) {
+      for (const photo of item.photos || []) {
+        if (photo.shot === 'mango') {
+          photo.shot = 'private';
+          migrated = true;
+        }
+      }
+    }
+    if (migrated) this.saveItems();
+
+    // The first release used a prompt where the model role-played the figure.
+    // Replace only the known old default; custom prompts are left untouched.
+    if (!this.config.systemPrompt || this.config.systemPrompt.includes('你既是照片里那款周边的化身')) {
+      this.config.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+      this.saveConfig();
+    }
   }
 
   // ---------- config ----------
@@ -111,6 +143,8 @@ class Store {
       systemPrompt: this.config.systemPrompt,
       autoUpdate: this.config.autoUpdate,
       updateRepo: this.config.updateRepo,
+      dailyChatEnabled: this.config.dailyChatEnabled !== false,
+      dailyChatTime: this.config.dailyChatTime || '22:00',
       apiKeySet: Boolean(key),
       apiKeyPreview: key ? `${key.slice(0, 3)}…${key.slice(-4)}` : '',
       apiKeyStoredEncrypted: Boolean(this.config.apiKeyEnc),
@@ -157,7 +191,7 @@ class Store {
   updateConfig(patch) {
     const allowed = [
       'baseUrl', 'model', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
-      'systemPrompt', 'autoUpdate', 'updateRepo',
+      'systemPrompt', 'autoUpdate', 'updateRepo', 'dailyChatEnabled', 'dailyChatTime',
     ];
     for (const key of allowed) {
       if (patch[key] !== undefined) this.config[key] = patch[key];
@@ -253,12 +287,28 @@ class Store {
     this.saveSessions();
   }
 
+  // ---------- free chat ----------
+  getFreeChat() {
+    return clone({ ...DEFAULT_FREECHAT, ...this.freechat });
+  }
+
+  saveFreeChat() {
+    this.freechat.updatedAt = Date.now();
+    writeJsonAtomic(this.freechatPath, this.freechat);
+  }
+
+  putFreeChat(value) {
+    this.freechat = { ...clone(DEFAULT_FREECHAT), ...value };
+    this.saveFreeChat();
+    return this.getFreeChat();
+  }
+
   // ---------- backup ----------
   async backupData(reason = 'manual') {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const dest = path.join(this.backupDir, `${stamp}-${reason}`);
     ensureDir(dest);
-    for (const name of ['config.json', 'items.json', 'daily.json', 'sessions.json']) {
+    for (const name of ['config.json', 'items.json', 'daily.json', 'sessions.json', 'freechat.json']) {
       const src = path.join(this.dataDir, name);
       if (fs.existsSync(src)) fs.copyFileSync(src, path.join(dest, name));
     }

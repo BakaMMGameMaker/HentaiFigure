@@ -83,6 +83,13 @@ export const IconBook = (p: IconProps) => (
   </Svg>
 );
 
+export const IconChat = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M20.5 11.5a8 8 0 0 1-8.5 8H8.2L4 22.2v-5.4a8 8 0 1 1 16.5-5.3Z" />
+    <path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01" />
+  </Svg>
+);
+
 export const IconCheck = (p: IconProps) => (
   <Svg {...p}><path d="m20 6.5-10.5 11L4 12" /></Svg>
 );

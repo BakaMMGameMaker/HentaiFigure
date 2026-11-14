@@ -316,7 +316,7 @@ export function ItemEditor({ item, draftId, initialStatus, onClose, onSaved, toa
                   rows={5}
                   value={form.intro}
                   onChange={(e) => set('intro', e.target.value)}
-                  placeholder="第一眼看到她时，你在想什么？哪里的细节让你心动？写下来，之后她会拿这些话来撩你。"
+                  placeholder="第一眼看到她时，你在想什么？哪里的细节让你心动？写下来，之后管理员会拿这些话来撩你。"
                   maxLength={8000}
                 />
               </Field>
@@ -329,7 +329,7 @@ export function ItemEditor({ item, draftId, initialStatus, onClose, onSaved, toa
                 <div className="block-title">照片</div>
                 <p className="muted small">
                   {form.status === 'owned' && form.type === 'figure'
-                    ? '全身照至少一张，其余部位可选。她会真的看图说话。'
+                    ? '全身照至少一张，其余部位可选。管理员会真的看图说话。'
                     : '宣传图、实物图都可以。她之后会照着这些图撩你。'}
                 </p>
               </div>
@@ -431,4 +431,5 @@ export function ItemEditor({ item, draftId, initialStatus, onClose, onSaved, toa
     </Modal>
   );
 }
+
 

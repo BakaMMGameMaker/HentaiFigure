@@ -1,0 +1,17 @@
+{
+  "appId": "com.hentaifigure.app",
+  "appName": "HentaiFigure",
+  "webDir": "mobile-dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}
+

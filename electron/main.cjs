@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  app, BrowserWindow, ipcMain, protocol, net, dialog, shell, nativeImage, Menu,
+  app, BrowserWindow, ipcMain, protocol, net, dialog, shell, nativeImage, Menu, Notification,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -39,6 +39,7 @@ let store = null;
 let ritual = null;
 let updater = null;
 let updateInfo = null;
+let freeChatTimer = null;
 const send = (payload) => {
   try {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('hf:event', payload);
@@ -73,7 +74,8 @@ function validatePhoto(photo, itemId) {
   if (!/^[A-Za-z0-9_-]{4,80}$/.test(id)) throw new Error('照片 ID 不合法。');
   const file = String(photo.file || '');
   if (!file.startsWith(`images/${itemId}/`)) throw new Error('照片路径不合法。');
-  const shot = ALLOWED_SHOTS.has(photo.shot) ? photo.shot : 'promo';
+  const shotValue = photo.shot === 'mango' ? 'private' : photo.shot;
+  const shot = ALLOWED_SHOTS.has(shotValue) ? shotValue : 'promo';
   return {
     id,
     file,
@@ -366,6 +368,12 @@ function registerIpc() {
       clean.systemPrompt = String(patch.systemPrompt).slice(0, 30000);
     }
     if (patch.autoUpdate !== undefined) clean.autoUpdate = Boolean(patch.autoUpdate);
+    if (patch.dailyChatEnabled !== undefined) clean.dailyChatEnabled = Boolean(patch.dailyChatEnabled);
+    if (patch.dailyChatTime !== undefined) {
+      const time = String(patch.dailyChatTime || '').trim();
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error('主动话题时间格式应为 HH:mm。');
+      clean.dailyChatTime = time;
+    }
     if (patch.updateRepo !== undefined) {
       const repo = String(patch.updateRepo).trim();
       if (repo && !/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('更新源格式应为 owner/repo。');
@@ -482,6 +490,25 @@ function registerIpc() {
     return true;
   });
 
+  ipcMain.handle('chat:free:state', () => ritual.freeChatState());
+  ipcMain.handle('chat:free:send', (event, { text } = {}) => ritual.sendFreeChatUserMessage(text));
+  ipcMain.handle('chat:free:generate', (event, forceNew) => {
+    const chat = store.getFreeChat();
+    const last = chat.messages[chat.messages.length - 1];
+    if (!forceNew && last?.role === 'assistant') return { started: false };
+    ritual.generateFreeChat({}).catch(() => {});
+    return { started: true };
+  });
+  ipcMain.handle('chat:free:stop', () => {
+    ritual.stopFreeChat();
+    return true;
+  });
+  ipcMain.handle('chat:free:proactive', async () => {
+    const result = await ritual.maybeProactiveFreeChat(true);
+    if (result?.message) notifyFreeChat(result.message);
+    return result;
+  });
+
   ipcMain.handle('calendar:month', (event, { year, month } = {}) => {
     const now = new Date();
     return ritual.calendar(Number(year) || now.getFullYear(), Number(month) || now.getMonth() + 1);
@@ -525,7 +552,7 @@ function registerIpc() {
     if (res.canceled || !res.filePath) return { canceled: true };
     const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'hf-export-'));
     try {
-      for (const name of ['config.json', 'items.json', 'daily.json', 'sessions.json']) {
+      for (const name of ['config.json', 'items.json', 'daily.json', 'sessions.json', 'freechat.json']) {
         const src = path.join(store.dataDir, name);
         if (fs.existsSync(src)) fs.copyFileSync(src, path.join(stage, name));
       }
@@ -571,7 +598,7 @@ function registerIpc() {
       const root = fs.existsSync(path.join(tmp, 'items.json')) ? tmp : path.join(tmp, 'data');
       if (!fs.existsSync(path.join(root, 'items.json'))) throw new Error('备份包里没有 items.json，可能不是 HentaiFigure 的备份。');
       await store.backupData('before-import');
-      for (const name of ['config.json', 'items.json', 'daily.json', 'sessions.json']) {
+      for (const name of ['config.json', 'items.json', 'daily.json', 'sessions.json', 'freechat.json']) {
         const src = path.join(root, name);
         if (fs.existsSync(src)) fs.copyFileSync(src, path.join(store.dataDir, name));
       }
@@ -636,6 +663,42 @@ async function runStartupUpdateCheck() {
   } catch {}
 }
 
+function notifyFreeChat(message) {
+  if (!message) return;
+  send({ type: 'free:proactive', message });
+  try {
+    if (Notification.isSupported()) {
+      const body = String(message.content || '').replace(/\s+/g, ' ').slice(0, 140);
+      const notification = new Notification({
+        title: '收藏室管理员',
+        body: body || '她来找你了。',
+        silent: false,
+      });
+      notification.on('click', () => {
+        if (!mainWindow) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+        send({ type: 'free:focus' });
+      });
+      notification.show();
+    }
+  } catch {}
+}
+
+function startFreeChatWatch() {
+  if (freeChatTimer) clearInterval(freeChatTimer);
+  const tick = async () => {
+    try {
+      if (!ritual || ritual.freeChatBusy) return;
+      const result = await ritual.maybeProactiveFreeChat(false);
+      if (result?.message) notifyFreeChat(result.message);
+    } catch {}
+  };
+  setTimeout(tick, 6500);
+  freeChatTimer = setInterval(tick, 60000);
+}
+
 app.on('second-instance', () => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -657,6 +720,7 @@ app.whenReady().then(async () => {
   createWindow();
 
   setTimeout(runStartupUpdateCheck, 3500);
+  startFreeChatWatch();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -665,6 +729,8 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   try {
+    if (freeChatTimer) clearInterval(freeChatTimer);
+    ritual?.stopFreeChat?.();
     for (const id of ritual?.controllers.keys() || []) ritual.stop(id);
   } catch {}
 });
@@ -679,4 +745,6 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.error('unhandledRejection', err);
 });
+
+
 

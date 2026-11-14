@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, Config, UpdateInfo } from '../types';
 import { Modal, Spinner } from './ui';
 import {
-  IconAlert, IconCheck, IconCircleCheck, IconDownload, IconFolder, IconInfo,
+  IconAlert, IconCheck, IconCircleCheck, IconClock, IconDownload, IconFolder, IconInfo, IconChat,
   IconRefresh, IconSettings, IconSparkles, IconWallet, IconX,
 } from '../icons';
 import { cleanError } from '../utils';
@@ -11,7 +11,7 @@ type Tab = 'api' | 'persona' | 'update' | 'data' | 'about';
 
 const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
   { id: 'api', label: 'API', icon: <IconSettings size={17} /> },
-  { id: 'persona', label: '人格', icon: <IconSparkles size={17} /> },
+  { id: 'persona', label: '管理员', icon: <IconSparkles size={17} /> },
   { id: 'update', label: '更新', icon: <IconRefresh size={17} /> },
   { id: 'data', label: '数据', icon: <IconFolder size={17} /> },
   { id: 'about', label: '关于', icon: <IconInfo size={17} /> },
@@ -44,11 +44,14 @@ export function SettingsModal({
     systemPrompt: config.systemPrompt,
     autoUpdate: config.autoUpdate,
     updateRepo: config.updateRepo,
+    dailyChatEnabled: config.dailyChatEnabled !== false,
+    dailyChatTime: config.dailyChatTime || '22:00',
   });
   const [apiKey, setApiKey] = useState('');
   const [clearKey, setClearKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [proactiveBusy, setProactiveBusy] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [info, setInfo] = useState<UpdateInfo | null>(updateInfo);
   const [checking, setChecking] = useState(false);
@@ -115,6 +118,22 @@ export function SettingsModal({
       setTestResult({ ok: false, text: cleanError(e) });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const proactiveNow = async () => {
+    setProactiveBusy(true);
+    try {
+      const result = await window.hf.chat.freeProactive();
+      if (result?.message) {
+        toast('管理员已经挑好话题，去「对话」看看吧。', 'ok');
+      } else {
+        toast('管理员暂时没有找到合适的话题。', 'info');
+      }
+    } catch (e) {
+      toast(cleanError(e), 'error');
+    } finally {
+      setProactiveBusy(false);
     }
   };
 
@@ -238,7 +257,7 @@ export function SettingsModal({
               <div className="eyebrow">{TABS.find((t) => t.id === tab)?.label.toUpperCase()}</div>
               <h2>
                 {tab === 'api' && '连接 DeepSeek'}
-                {tab === 'persona' && '她的性格'}
+                {tab === 'persona' && '管理员的性格'}
                 {tab === 'update' && '检查更新'}
                 {tab === 'data' && '数据与备份'}
                 {tab === 'about' && '关于 HentaiFigure'}
@@ -287,7 +306,7 @@ export function SettingsModal({
                     </label>
                   </div>
                   <p className="muted small">
-                    默认 <code>deepseek-flash</code>，支持看图。换用纯文本模型时，她会只根据照片标签和简介说话。
+                    默认 <code>deepseek-flash</code>，支持看图。换用纯文本模型时，管理员只会根据照片标签和简介说话。
                   </p>
 
                   <div className="test-row">
@@ -348,10 +367,11 @@ export function SettingsModal({
             )}
 
             {tab === 'persona' && (
+              <>
               <div className="settings-section">
                 <div className="block-title">系统提示词</div>
                 <p className="muted small">
-                  这是她每一次开口前的底色。阶段规则、周边资料和旧记忆会由应用自动接在后面，不需要写在这里。
+                  这是管理员每一次开口前的底色。阶段规则、周边资料和旧记忆会由应用自动接在后面，不需要写在这里。
                 </p>
                 <textarea
                   className="input textarea prompt-textarea"
@@ -361,9 +381,55 @@ export function SettingsModal({
                 />
                 <div className="prompt-actions">
                   <button className="btn btn-ghost" onClick={resetPrompt}>恢复默认人格</button>
-                  <span className="muted small">越具体，她越像你养的那位。</span>
+                  <span className="muted small">越具体，她越像你的管理员。</span>
                 </div>
               </div>
+
+              <div className="settings-section">
+                <div className="block-title">每日主动话题</div>
+                <label className="switch-row">
+                  <span>
+                    <strong>到点让管理员主动来找你</strong>
+                    <small>管理员会读取收藏室和全部记忆，自己挑一个话题开头。应用没开的话，下次启动会补上。</small>
+                  </span>
+                  <button
+                    type="button"
+                    className={`switch ${form.dailyChatEnabled ? 'on' : ''}`}
+                    onClick={() => set('dailyChatEnabled', !form.dailyChatEnabled)}
+                    aria-label="切换每日主动话题"
+                  >
+                    <span />
+                  </button>
+                </label>
+                <div className="field-row">
+                  <label className="field">
+                    <span className="field-label">每天的时间</span>
+                    <input
+                      className="input input-date"
+                      type="time"
+                      value={form.dailyChatTime}
+                      onChange={(e) => set('dailyChatTime', e.target.value)}
+                      disabled={!form.dailyChatEnabled}
+                    />
+                  </label>
+                  <div className="field">
+                    <span className="field-label">现在试一下</span>
+                    <button
+                      className="btn btn-soft"
+                      onClick={() => void proactiveNow()}
+                      disabled={proactiveBusy || !config.apiKeySet}
+                    >
+                      {proactiveBusy ? <Spinner size={15} /> : <IconChat size={15} />}
+                      让她来一条
+                    </button>
+                    <p className="muted small">会立刻在后台生成一条消息，保存在「对话」里。</p>
+                  </div>
+                </div>
+                <p className="muted small">
+                  <IconClock size={13} /> 主动话题也会显示系统通知。点通知会直接打开对话。
+                </p>
+              </div>
+              </>
             )}
 
             {tab === 'update' && (
@@ -395,16 +461,18 @@ export function SettingsModal({
                         <span>{updateMessage || '正在更新…'}</span>
                       </div>
                     )}
-                    {appInfo?.isPackaged && (
+                    {appInfo?.platform === 'android' ? (
+                      <p className="muted small"><IconAlert size={13} /> 手机版不支持应用内更新。请到发布页下载新的 APK 覆盖安装；本地收藏和记忆会保留。</p>
+                    ) : appInfo?.isPackaged ? (
                       <p className="muted small"><IconAlert size={13} /> 便携版不支持应用内自动更新。请到发布页下载新版本，直接替换 exe；本地数据不受影响。</p>
-                    )}
+                    ) : null}
                     <div className="update-actions">
                       <button className="btn btn-soft" onClick={checkUpdate} disabled={checking || applying}>
                         {checking ? <Spinner size={15} /> : <IconRefresh size={15} />}
                         检查更新
                       </button>
                       {info?.available && (
-                        <button className="btn btn-primary" onClick={applyUpdate} disabled={applying || Boolean(appInfo?.isPackaged)}>
+                        <button className="btn btn-primary" onClick={applyUpdate} disabled={applying || Boolean(appInfo?.isPackaged) || appInfo?.platform === 'android'}>
                           <IconDownload size={15} /> 更新并重启
                         </button>
                       )}
@@ -537,4 +605,8 @@ export function SettingsModal({
     </Modal>
   );
 }
+
+
+
+
 

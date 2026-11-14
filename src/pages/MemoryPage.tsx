@@ -73,7 +73,7 @@ export function MemoryPage({
           <div className="eyebrow">HER MEMORY</div>
           <h1>记忆库</h1>
           <p className="page-sub">
-            每一次上贡都封存在这里。她在对话里可以随时调用这些记忆，翻你的旧账。
+            每一次上贡都封存在这里。管理员在对话里可以随时调用这些记忆，翻你的旧账。
           </p>
         </div>
         <div className="memory-stats">
@@ -114,13 +114,13 @@ export function MemoryPage({
       </div>
 
       {loading ? (
-        <div className="memory-loading"><Spinner /> 正在整理她的记忆…</div>
+        <div className="memory-loading"><Spinner /> 正在整理记忆…</div>
       ) : !sessions.length ? (
         <EmptyState
-          title={data?.sessions.length ? '没有匹配的记忆' : '她还没有记忆'}
+          title={data?.sessions.length ? '没有匹配的记忆' : '还没有记忆'}
           desc={data?.sessions.length
             ? '换个关键词，或者清掉筛选。'
-            : '完成一次今日份上贡，她就会把那天的事记下来。'}
+            : '完成一次今日份上贡，管理员就会把那天的事记下来。'}
           icon={<IconBook size={32} />}
         />
       ) : (
@@ -158,11 +158,12 @@ export function MemoryPage({
 
       <div className="memory-footnote">
         <IconSparkles size={13} />
-        她可以调用工具翻查全部过去的事件——包括你现在看到的这些。
+        管理员可以调用工具翻查全部过去的事件——包括你现在看到的这些。
       </div>
 
       {sessionId && <SessionModal sessionId={sessionId} onClose={() => setSessionId(null)} />}
     </div>
   );
 }
+
 

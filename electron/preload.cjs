@@ -54,6 +54,11 @@ contextBridge.exposeInMainWorld('hf', {
     send: (sessionId, text) => ipcRenderer.invoke('chat:send', { sessionId, text }),
     generate: (sessionId) => ipcRenderer.invoke('chat:generate', sessionId),
     stop: (sessionId) => ipcRenderer.invoke('chat:stop', sessionId),
+    freeState: () => ipcRenderer.invoke('chat:free:state'),
+    freeSend: (text) => ipcRenderer.invoke('chat:free:send', { text }),
+    freeGenerate: (forceNew) => ipcRenderer.invoke('chat:free:generate', forceNew),
+    freeStop: () => ipcRenderer.invoke('chat:free:stop'),
+    freeProactive: () => ipcRenderer.invoke('chat:free:proactive'),
   },
   calendar: {
     month: (year, month) => ipcRenderer.invoke('calendar:month', { year, month }),
@@ -77,3 +82,4 @@ contextBridge.exposeInMainWorld('hf', {
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   onEvent: subscribe,
 });
+
