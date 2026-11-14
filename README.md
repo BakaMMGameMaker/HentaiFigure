@@ -279,10 +279,6 @@ scripts/
 
 ## 内容说明
 
-HentaiFigure 是给成年人个人使用的虚构角色收藏管理工具。所有角色、周边与对话均为虚构；请不要把真实人物带入对话。生成内容由你配置的 DeepSeek API 产生，请遵守当地法律、DeepSeek 的服务条款以及你所在平台的规定。
+HentaiFigure 是个人使用的虚构角色周边收藏管理工具。生成内容配置的 DeepSeek API 产生。
 
 本项目受 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)（MIT）启发；未直接复制其源码。界面与代码以 MIT 协议发布，详见 [LICENSE](LICENSE)。
-
-
-
-
