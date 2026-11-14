@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 
 const IMAGE_CACHE = new Map();
-const MAX_CACHE_ENTRIES = 64;
+const MAX_CACHE_ENTRIES = 24;
 
 class ApiError extends Error {
   constructor(message, { status = 0, detail = '', code = '' } = {}) {
@@ -299,3 +299,4 @@ module.exports = {
   dataUrlFromFile,
   normalizeBaseUrl,
 };
+

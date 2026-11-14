@@ -3,7 +3,22 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execFile } = require('node:child_process');
+
+function gitAsync(args, cwd, timeout = 45000) {
+  return new Promise((resolve) => {
+    execFile('git', args, {
+      cwd, timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    }, (err, stdout, stderr) => {
+      resolve({
+        status: err ? (typeof err.code === 'number' ? err.code : 1) : 0,
+        stdout: String(stdout || '').trim(),
+        stderr: String(stderr || '').trim(),
+      });
+    });
+  });
+}
 
 function git(args, cwd, timeout = 120000) {
   const res = spawnSync('git', args, {
@@ -11,6 +26,7 @@ function git(args, cwd, timeout = 120000) {
     encoding: 'utf8',
     timeout,
     windowsHide: true,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
   });
   return {
     status: res.status,
@@ -70,24 +86,24 @@ class Updater {
     };
 
     if (fs.existsSync(path.join(this.root, '.git'))) {
-      const remote = git(['remote', 'get-url', 'origin'], this.root, 10000);
+      const remote = await gitAsync(['remote', 'get-url', 'origin'], this.root, 10000);
       if (remote.status === 0 && remote.stdout) {
         base.configured = true;
         base.mode = 'git';
         base.remote = remote.stdout;
-        const fetched = git(['fetch', '--quiet', '--prune', 'origin'], this.root, 45000);
+        const fetched = await gitAsync(['fetch', '--quiet', '--prune', 'origin'], this.root, 45000);
         if (fetched.status !== 0) {
           base.error = fetched.stderr || 'git fetch 失败';
           return base;
         }
-        const upstream = git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], this.root, 10000);
+        const upstream = await gitAsync(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], this.root, 10000);
         if (upstream.status !== 0) {
           base.error = '当前分支没有设置上游分支（upstream）。';
           return base;
         }
-        const behind = Number(git(['rev-list', '--count', 'HEAD..@{u}'], this.root, 20000).stdout || 0);
-        const log = git(['log', '-1', '--format=%h %s', '@{u}'], this.root, 20000);
-        const pkgRaw = git(['show', '@{u}:package.json'], this.root, 20000);
+        const behind = Number((await gitAsync(['rev-list', '--count', 'HEAD..@{u}'], this.root, 20000)).stdout || 0);
+        const log = await gitAsync(['log', '-1', '--format=%h %s', '@{u}'], this.root, 20000);
+        const pkgRaw = await gitAsync(['show', '@{u}:package.json'], this.root, 20000);
         let latestVersion = currentVersion;
         try {
           latestVersion = JSON.parse(pkgRaw.stdout).version || currentVersion;
@@ -256,3 +272,5 @@ class Updater {
 }
 
 module.exports = { Updater, compareVersions };
+
+
