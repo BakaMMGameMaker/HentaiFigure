@@ -1,0 +1,22 @@
+appId: com.hentaifigure.app
+productName: HentaiFigure
+copyright: HentaiFigure
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - electron/**/*
+  - build/icon.png
+  - package.json
+  - "!**/*.map"
+asar: true
+win:
+  icon: build/icon.ico
+  target:
+    - target: portable
+      arch:
+        - x64
+portable:
+  artifactName: HentaiFigure-${version}-portable.exe
+

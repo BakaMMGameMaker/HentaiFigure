@@ -1,0 +1,31 @@
+{
+  "name": "hentaifigure",
+  "productName": "HentaiFigure",
+  "version": "1.0.0",
+  "description": "HentaiFigure — 私人的手办收藏室与今日份上贡",
+  "main": "electron/main.cjs",
+  "author": "HentaiFigure",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.cjs",
+    "build": "vite build",
+    "start": "npm run build && electron .",
+    "app": "electron .",
+    "type": "tsc --noEmit",
+    "pack": "npm run build && electron-builder --win portable --config electron-builder.yml"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.3"
+  }
+}

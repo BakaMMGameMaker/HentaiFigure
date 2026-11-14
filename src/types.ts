@@ -1,0 +1,253 @@
+export type ItemStatus = 'owned' | 'pending' | 'watching';
+export type ItemType = 'figure' | 'acrylic' | 'pillow' | 'poster' | 'badge' | 'itabag' | 'plush' | 'other';
+export type Phase = 'wipe' | 'fantasy' | 'instigate';
+export type Shot =
+  | 'promo' | 'real' | 'full' | 'face' | 'armpit' | 'chest' | 'back' | 'belly'
+  | 'mango' | 'butt' | 'underSkirt' | 'thigh' | 'feet' | 'other';
+
+export interface Photo {
+  id: string;
+  file: string;
+  thumbFile?: string;
+  shot: Shot;
+  caption?: string;
+  width?: number;
+  height?: number;
+  createdAt?: number;
+}
+
+export interface Item {
+  id: string;
+  name: string;
+  type: ItemType;
+  status: ItemStatus;
+  series?: string;
+  scale?: string;
+  originalPrice?: number | null;
+  purchasePrice?: number | null;
+  deposit?: number | null;
+  balance?: number | null;
+  intro?: string;
+  dueDate?: string;
+  photos: Photo[];
+  createdAt?: number;
+  updatedAt?: number;
+  statusHistory?: { from: string | null; to: string; at: number; via: string }[];
+  needsFullBodyPhoto?: boolean;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'assistant' | 'user';
+  content: string;
+  ts: number;
+  reasoning?: string;
+  toolTrace?: { name: string; args: Record<string, unknown>; result: string }[];
+}
+
+export interface Session {
+  id: string;
+  itemId: string;
+  itemName: string;
+  phase: Phase;
+  day: string;
+  startedAt: number;
+  endedAt: number | null;
+  archived: boolean;
+  messages: ChatMessage[];
+  summary: string;
+  outcome?: { ordered?: boolean; from?: string; to?: string; done?: boolean; skipped?: boolean } | null;
+}
+
+export interface PhaseRecord {
+  status: 'pending' | 'active' | 'done' | 'skipped';
+  itemId: string | null;
+  sessionId: string | null;
+  startedAt?: number | null;
+  endedAt?: number | null;
+  summary?: string;
+  outcome?: unknown;
+}
+
+export interface RitualState {
+  day: string;
+  exists: boolean;
+  status: 'idle' | 'in_progress' | 'complete' | 'empty';
+  phase: Phase | null;
+  phaseLabel?: string;
+  phaseInstruction?: string;
+  phases: Record<Phase, PhaseRecord> | null;
+  item: Item | null;
+  session: Session | null;
+  progress: { phase: Phase; label: string; status: string; itemName?: string }[];
+  eligible: Record<Phase, number>;
+  counts: { owned: number; pending: number; watching: number; total: number };
+  hasAnyItem: boolean;
+  startedAt?: number;
+  completedAt?: number | null;
+}
+
+export interface Config {
+  baseUrl: string;
+  model: string;
+  temperature: number;
+  maxPhotosPerRequest: number;
+  imageDetail: 'high' | 'low';
+  systemPrompt: string;
+  autoUpdate: boolean;
+  updateRepo: string;
+  apiKeySet: boolean;
+  apiKeyPreview: string;
+  apiKeyStoredEncrypted: boolean;
+}
+
+export interface AppInfo {
+  version: string;
+  name: string;
+  platform: string;
+  dataDir: string;
+  appPath: string;
+  isPackaged: boolean;
+  isMaximized: boolean;
+  updateInfo: UpdateInfo | null;
+  versions: { electron: string; chrome: string; node: string };
+}
+
+export interface UpdateInfo {
+  configured: boolean;
+  available: boolean;
+  currentVersion: string;
+  latestVersion: string;
+  mode: string;
+  notes?: string;
+  error?: string;
+  reason?: string;
+  behind?: number;
+  branch?: string;
+  remote?: string;
+  htmlUrl?: string;
+  checkedAt?: number;
+}
+
+export interface CalendarDay {
+  date: string;
+  status: string;
+  completedAt: number | null;
+  hasRitual: boolean;
+  sessions: {
+    id: string;
+    itemId: string;
+    itemName: string;
+    phase: Phase;
+    summary: string;
+    archived: boolean;
+    outcome?: { ordered?: boolean; from?: string; to?: string; done?: boolean; skipped?: boolean } | null;
+    startedAt: number;
+  }[];
+}
+
+export interface MemoryOverview {
+  stats: { sessions: number; days: number; items: number };
+  items: { id: string; name: string; status: ItemStatus; type: ItemType; cover: string | null }[];
+  sessions: {
+    id: string;
+    itemId: string;
+    itemName: string;
+    phase: Phase;
+    day: string;
+    startedAt: number;
+    endedAt: number | null;
+    archived: boolean;
+    summary: string;
+    outcome?: { ordered?: boolean; from?: string; to?: string; done?: boolean; skipped?: boolean } | null;
+    messageCount: number;
+  }[];
+}
+
+export interface DayDetail {
+  day: string;
+  record: {
+    date: string;
+    status: string;
+    phase: string;
+    phases: Record<string, PhaseRecord>;
+    completedAt: number | null;
+  } | null;
+  sessions: Session[];
+  counts: { owned: number; pending: number; watching: number; total: number };
+}
+
+export interface HfEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
+export interface HfApi {
+  app: { info(): Promise<AppInfo> };
+  window: {
+    minimize(): Promise<void>;
+    toggleMaximize(): Promise<boolean>;
+    close(): Promise<void>;
+  };
+  config: {
+    get(): Promise<Config>;
+    save(patch: Record<string, unknown>): Promise<Config>;
+    resetPrompt(): Promise<Config>;
+    test(input: { apiKey?: string; baseUrl?: string; model?: string }): Promise<{ ok: boolean; reply?: string; model?: string; message?: string }>;
+  };
+  items: {
+    list(): Promise<Item[]>;
+    newId(): Promise<string>;
+    save(item: Partial<Item>): Promise<Item>;
+    remove(id: string): Promise<boolean>;
+    discardDraft(id: string): Promise<boolean>;
+  };
+  photos: {
+    add(itemId: string): Promise<Photo[]>;
+    addPaths(itemId: string, paths: string[]): Promise<Photo[]>;
+    remove(itemId: string, photoId: string): Promise<boolean>;
+    pathForFile(file: File): string;
+  };
+  ritual: {
+    state(day?: string): Promise<RitualState>;
+    start(day?: string): Promise<{ state: RitualState; empty?: boolean; message?: string; complete?: boolean }>;
+    open(day?: string): Promise<{ state: RitualState; empty?: boolean; message?: string; complete?: boolean }>;
+    finish(day: string, sessionId: string): Promise<{ state: RitualState; summary?: string; complete?: boolean }>;
+    skip(day: string): Promise<{ state: RitualState }>;
+    instigate(day: string, sessionId: string, ordered: boolean, targetStatus?: 'pending' | 'owned'): Promise<{ state: RitualState; outcome?: unknown; summary?: string }>;
+    stop(sessionId: string): Promise<boolean>;
+  };
+  chat: {
+    send(sessionId: string, text: string): Promise<ChatMessage>;
+    generate(sessionId: string): Promise<{ started: boolean }>;
+    stop(sessionId: string): Promise<boolean>;
+  };
+  calendar: {
+    month(year: number, month: number): Promise<Record<string, CalendarDay>>;
+    day(day: string): Promise<DayDetail>;
+  };
+  memory: {
+    overview(): Promise<MemoryOverview>;
+    session(id: string): Promise<Session | null>;
+  };
+  data: {
+    openDir(): Promise<string>;
+    backup(): Promise<{ path: string }>;
+    exportZip(): Promise<{ path?: string; canceled?: boolean }>;
+    importZip(): Promise<{ imported?: boolean; canceled?: boolean }>;
+  };
+  update: {
+    check(silent?: boolean): Promise<UpdateInfo>;
+    apply(): Promise<{ updated: boolean }>;
+    openRelease(): Promise<void>;
+  };
+  openExternal(url: string): Promise<void>;
+  onEvent(callback: (event: HfEvent) => void): () => void;
+}
+
+declare global {
+  interface Window {
+    hf: HfApi;
+  }
+}
+
