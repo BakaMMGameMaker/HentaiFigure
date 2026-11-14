@@ -8,6 +8,7 @@ files:
   - dist/**/*
   - electron/**/*
   - build/icon.png
+  - app-config.json
   - package.json
   - "!**/*.map"
 asar: true
@@ -19,4 +20,5 @@ win:
         - x64
 portable:
   artifactName: HentaiFigure-${version}-portable.exe
+
 

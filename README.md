@@ -4,6 +4,8 @@
 
 HentaiFigure 是一个**完全本地运行**的收藏管理应用（Windows 桌面 + Android 手机）：收藏图鉴、每日「擦拭 / 意淫 / 教唆」流程、上贡日历，以及一位会记住旧账、还会在每晚主动来找你的「收藏室女管理员」。界面和交互思路参考了 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)，但对话、记忆和收藏数据都由本应用自己管理，直接调用 DeepSeek 的 OpenAI 兼容 Chat Completions API。
 
+官方仓库：https://github.com/BakaMMGameMaker/HentaiFigure
+
 ---
 
 ## 一键启动
@@ -116,45 +118,19 @@ HentaiFigure 是一个**完全本地运行**的收藏管理应用（Windows 桌�
 
 ## 自动更新
 
-应用内置更新检查，**只替换程序文件，不碰上面的数据目录**。有两种更新源：
+更新源已写死为官方仓库：
 
-### 方式 A：git 仓库（推荐）
+**https://github.com/BakaMMGameMaker/HentaiFigure**
 
-在程序目录初始化并推送到你自己的 GitHub 仓库：
+不需要在设置里填写任何仓库地址，也不开放更新源配置。应用只替换程序文件，不碰数据目录。
 
-```bat
-git init
-git add .
-git commit -m "HentaiFigure v1.0.0"
-git branch -M main
-git remote add origin https://github.com/<你>/<仓库>.git
-git push -u origin main
-```
+- **启动时自动检查**：桌面启动约 3 秒、手机启动约 5 秒后检查一次；可以在「设置 → 更新」关闭。
+- **源码方式（`启动.bat`）**：当前目录是官方仓库的 git clone 时，会 `git fetch` 并比较 `origin/master`。点「更新并重启」会：备份数据 → `git fetch` → `git reset --hard @{u}` → 必要时 `npm install` → `npm run build` → 自动重启。
+- **便携版 / 手机版**：读取官方仓库最新 Release（或 `master` 分支的 `package.json`）判断版本。发现新版本会显示版本差异和发布页；便携版 exe / APK 不能自替换，请下载新文件覆盖安装。
+- **发版规则**：修改 `package.json` 的 `version` → 提交并推送 `master` → 打 `vX.Y.Z` tag → 在 GitHub 创建 Release（附上 APK / 便携版 exe）。
+- **手动更新**：双击 `更新.bat`，会从 `origin` 拉取、安装依赖并重新构建。
 
-之后每次发布新版本，只要：
-
-1. 修改 `package.json` 里的 `version`；
-2. `git commit` + `git push`。
-
-启动应用 3 秒后会自动 `git fetch` 检查；首页会出现「发现新版本」提示。点更新后应用会：
-备份数据 → `git fetch` → `git reset --hard @{u}` → 必要时 `npm install` → `npm run build` → 自动重启。
-
-> 更新会丢弃你在程序目录里对代码做的本地改动，所以请不要把重要东西写在代码目录。收藏和记忆在 `%APPDATA%` 里，绝对是安全的。
-
-### 方式 B：GitHub 仓库 + 版本号
-
-在「设置 → 更新」里填写 `owner/repo`，并把版本号推上去。应用会读取最新 Release，或 `main` 分支的 `package.json`；发现更高版本就下载 zip、解压、替换程序文件、安装依赖、重新构建。
-
-- 只有 `package.json` 的 `version` 变大才会触发 zip 更新（所以发版记得改版本号）。
-- 更新源不填、当前目录也没有 git remote 时，检查会提示「未配置更新源」，不会报错。
-
-### 手动更新
-
-双击 **`更新.bat`**：有 git remote 就 `git pull --ff-only`，然后 `npm install` + `npm run build`。
-
-### 注意
-
-用 `npm run pack` 打出来的便携版 exe 由于程序在 asar 里，**不支持应用内自动更新**；请直接下载新版本替换 exe。想要自动更新，就用 `启动.bat` 的源码方式运行。
+> 更新会丢弃你在程序目录里对代码做的本地改动，所以不要把重要东西写在代码目录。收藏和记忆在 `%APPDATA%` 或手机应用数据里，不会丢。
 
 ---
 
@@ -202,7 +178,7 @@ npm run android:apk
 
 ### 手机上的 GitHub 更新检查
 
-「设置 → 更新」填写 `owner/repo` 并打开「启动时自动检查」，手机就会读取 GitHub Release（或 main 分支的 `package.json`）判断是否有新版本。
+「设置 → 更新」会显示写死的官方仓库地址。打开「启动时自动检查」后，手机会读取 GitHub Release（或 master 分支的 `package.json`）判断是否有新版本。
 
 手机版不能应用内替换 APK；发现新版本后会给出发布页入口，下载新 APK 覆盖安装即可。收藏和记忆在应用数据里，覆盖安装不会丢。实际上，`version` 要大于当前 `1.1.0` 才会提示。
 
@@ -281,8 +257,8 @@ scripts/
 **照片显示不出来**
 确认文件仍在 `%APPDATA%\HentaiFigure\data\images\`；不要手动移动/改名。应用启动时会清理没有被任何周边引用的孤儿文件。
 
-**更新提示未配置**
-在设置里填 `owner/repo`，或者给程序目录加 git remote。只有配置了更新源才会真的去 GitHub 拉取。
+**更新检查失败**
+更新源已固定为官方仓库，不需要填写。检查网络能否访问 GitHub；如果使用源码方式，确认当前目录是官方仓库的 git clone 且 origin 指向正确。
 
 **中文在命令行里乱码**
 批处理文件已经 `chcp 65001`；如果仍乱码，把终端字体换成支持中文的字体即可，不影响应用。
@@ -306,6 +282,7 @@ scripts/
 HentaiFigure 是给成年人个人使用的虚构角色收藏管理工具。所有角色、周边与对话均为虚构；请不要把真实人物带入对话。生成内容由你配置的 DeepSeek API 产生，请遵守当地法律、DeepSeek 的服务条款以及你所在平台的规定。
 
 本项目受 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)（MIT）启发；未直接复制其源码。界面与代码以 MIT 协议发布，详见 [LICENSE](LICENSE)。
+
 
 
 

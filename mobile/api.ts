@@ -7,6 +7,7 @@ import { MobileStore } from './store';
 import { MobileEngine } from './engine';
 import { exportSyncZip, importSyncZip } from './sync';
 import { friendlyError, testConnection } from './ai';
+import appConfig from '../app-config.json';
 
 const APP_VERSION = '1.1.0';
 const ALLOWED_STATUS = new Set(['owned', 'pending', 'watching']);
@@ -244,7 +245,7 @@ export function installMobileApi() {
   const ready = store.ready.then(() => {
     engine.startProactiveWatch();
     setTimeout(async () => {
-      if (!store.config.updateRepo || store.config.autoUpdate === false) return;
+      if (store.config.autoUpdate === false) return;
       try {
         const info = await checkUpdate(store, lastUpdateInfo);
         lastUpdateInfo = info;
@@ -265,10 +266,7 @@ export function installMobileApi() {
       notes: '',
       checkedAt: Date.now(),
     };
-    const repo = String(s.config.updateRepo || '').trim();
-    if (!repo) {
-      return { ...base, reason: '还没有配置更新源。在「设置 → 更新」填写 owner/repo。' };
-    }
+    const repo = appConfig.repo;
     base.configured = true;
     try {
       const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
@@ -368,11 +366,6 @@ export function installMobileApi() {
           const time = String(patch.dailyChatTime || '').trim();
           if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error('主动话题时间格式应为 HH:mm。');
           clean.dailyChatTime = time;
-        }
-        if (patch.updateRepo !== undefined) {
-          const repo = String(patch.updateRepo).trim();
-          if (repo && !/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('更新源格式应为 owner/repo。');
-          clean.updateRepo = repo;
         }
         if (patch.clearApiKey) clean.clearApiKey = true;
         else if (typeof patch.apiKey === 'string' && patch.apiKey.trim()) clean.apiKey = patch.apiKey.trim();
@@ -499,7 +492,7 @@ export function installMobileApi() {
         throw new Error('手机版请到发布页下载新的 APK；本地收藏和记忆不会受影响。');
       },
       openRelease: async () => {
-        const url = lastUpdateInfo?.htmlUrl || (store.config.updateRepo ? `https://github.com/${store.config.updateRepo}` : '');
+        const url = lastUpdateInfo?.htmlUrl || appConfig.repoUrl;
         if (url) window.open(url, '_blank');
       },
     },
@@ -545,6 +538,8 @@ function dayKey(date = new Date()): string {
 }
 
 export { APP_VERSION };
+
+
 
 
 

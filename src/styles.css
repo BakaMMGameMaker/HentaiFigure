@@ -2252,3 +2252,6 @@ button.stat-card:hover { background: rgba(255, 255, 255, 0.055); border-color: v
   .home-chat-side .home-chat-schedule { display: none; }
   .home-chat-preview { font-size: 10.5px; }
 }
+
+.update-source-actions { margin: 8px 0 4px; }
+

@@ -374,11 +374,6 @@ function registerIpc() {
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error('主动话题时间格式应为 HH:mm。');
       clean.dailyChatTime = time;
     }
-    if (patch.updateRepo !== undefined) {
-      const repo = String(patch.updateRepo).trim();
-      if (repo && !/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('更新源格式应为 owner/repo。');
-      clean.updateRepo = repo;
-    }
     if (patch.clearApiKey) clean.apiKey = '';
     else if (typeof patch.apiKey === 'string' && patch.apiKey.trim()) clean.apiKey = patch.apiKey.trim();
     return store.updateConfig(clean);
@@ -745,6 +740,7 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.error('unhandledRejection', err);
 });
+
 
 
 

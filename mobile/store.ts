@@ -32,7 +32,6 @@ export interface MobileConfig {
   imageDetail: 'high' | 'low';
   systemPrompt: string;
   autoUpdate: boolean;
-  updateRepo: string;
   dailyChatEnabled: boolean;
   dailyChatTime: string;
   apiKey: string;
@@ -54,8 +53,7 @@ const DEFAULT_CONFIG: MobileConfig = {
   maxPhotosPerRequest: 6,
   imageDetail: 'high',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  autoUpdate: false,
-  updateRepo: '',
+  autoUpdate: true,
   dailyChatEnabled: true,
   dailyChatTime: '22:00',
   apiKey: '',
@@ -173,7 +171,6 @@ export class MobileStore {
       imageDetail: this.config.imageDetail,
       systemPrompt: this.config.systemPrompt,
       autoUpdate: this.config.autoUpdate,
-      updateRepo: this.config.updateRepo,
       dailyChatEnabled: this.config.dailyChatEnabled !== false,
       dailyChatTime: this.config.dailyChatTime || '22:00',
       apiKeySet: Boolean(key),
@@ -189,7 +186,7 @@ export class MobileStore {
   async updateConfig(patch: Partial<MobileConfig> & { apiKey?: string; clearApiKey?: boolean }) {
     const allowed: (keyof MobileConfig)[] = [
       'baseUrl', 'model', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
-      'systemPrompt', 'autoUpdate', 'updateRepo', 'dailyChatEnabled', 'dailyChatTime',
+      'systemPrompt', 'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
     ];
     for (const key of allowed) {
       if (patch[key] !== undefined) (this.config as any)[key] = patch[key];
@@ -323,4 +320,6 @@ export class MobileStore {
 }
 
 export type { FreeChatState };
+
+
 

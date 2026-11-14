@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawnSync, execFile } = require('node:child_process');
+const { repo: UPDATE_REPO } = require('../../app-config.json');
 
 function gitAsync(args, cwd, timeout = 45000) {
   return new Promise((resolve) => {
@@ -117,11 +118,11 @@ class Updater {
       }
     }
 
-    if (this.config.updateRepo) {
+    {
       base.configured = true;
       base.mode = 'github';
       try {
-        const repo = String(this.config.updateRepo).trim();
+        const repo = UPDATE_REPO;
         const release = await fetchJson(`https://api.github.com/repos/${repo}/releases/latest`);
         const latestVersion = String(release.tag_name || release.name || '').replace(/^v/, '') || currentVersion;
         base.latestVersion = latestVersion;
@@ -132,7 +133,7 @@ class Updater {
         return base;
       } catch (err) {
         try {
-          const repo = String(this.config.updateRepo).trim();
+          const repo = UPDATE_REPO;
           const commits = await fetchJson(`https://api.github.com/repos/${repo}/commits?per_page=1`);
           const head = Array.isArray(commits) ? commits[0] : null;
           const pkg = await fetchJson(`https://api.github.com/repos/${repo}/contents/package.json`);
@@ -152,8 +153,6 @@ class Updater {
       }
     }
 
-    base.reason = '还没有配置更新源。把项目推送到 GitHub 并填写 owner/repo，或给仓库添加 git remote。';
-    return base;
   }
 
   async apply(progress) {
@@ -272,5 +271,7 @@ class Updater {
 }
 
 module.exports = { Updater, compareVersions };
+
+
 
 

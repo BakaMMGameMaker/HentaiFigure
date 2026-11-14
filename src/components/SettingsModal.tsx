@@ -6,6 +6,7 @@ import {
   IconRefresh, IconSettings, IconSparkles, IconWallet, IconX,
 } from '../icons';
 import { cleanError } from '../utils';
+import appConfig from '../../app-config.json';
 
 type Tab = 'api' | 'persona' | 'update' | 'data' | 'about';
 
@@ -43,7 +44,6 @@ export function SettingsModal({
     imageDetail: config.imageDetail,
     systemPrompt: config.systemPrompt,
     autoUpdate: config.autoUpdate,
-    updateRepo: config.updateRepo,
     dailyChatEnabled: config.dailyChatEnabled !== false,
     dailyChatTime: config.dailyChatTime || '22:00',
   });
@@ -84,7 +84,6 @@ export function SettingsModal({
         ...form,
         baseUrl: form.baseUrl.trim(),
         model: form.model.trim(),
-        updateRepo: form.updateRepo.trim(),
       };
       if (clearKey) patch.clearApiKey = true;
       else if (apiKey.trim()) patch.apiKey = apiKey.trim();
@@ -245,7 +244,7 @@ export function SettingsModal({
             </button>
           ))}
           <div className="settings-nav-foot">
-            <span>v{appInfo?.version || '1.0.0'}</span>
+            <span>v{appInfo?.version || '1.1.0'}</span>
             <span className="settings-nav-dot" />
             <span>本地运行</span>
           </div>
@@ -439,21 +438,21 @@ export function SettingsModal({
                     <div className="update-version">
                       <div>
                         <span className="muted small">当前版本</span>
-                        <strong>v{info?.currentVersion || appInfo?.version || '1.0.0'}</strong>
+                        <strong>v{info?.currentVersion || appInfo?.version || '1.1.0'}</strong>
                       </div>
                       <span className={`update-arrow ${info?.available ? 'has' : ''}`}>→</span>
                       <div>
                         <span className="muted small">最新版本</span>
-                        <strong>v{info?.latestVersion || info?.currentVersion || appInfo?.version || '1.0.0'}</strong>
+                        <strong>v{info?.latestVersion || info?.currentVersion || appInfo?.version || '1.1.0'}</strong>
                       </div>
                       <span className={`update-badge ${info?.available ? 'available' : info?.error ? 'error' : info?.configured ? 'ok' : ''}`}>
-                        {info?.available ? '有新版本' : info?.error ? '检查失败' : info?.configured ? '已是最新' : '未配置'}
+                        {info?.available ? '有新版本' : info?.error ? '检查失败' : info?.configured ? '已是最新' : '点击检查'}
                       </span>
                     </div>
                     {info?.notes && <p className="update-notes">{info.notes}</p>}
                     {info?.error && <p className="update-error"><IconAlert size={14} /> {info.error}</p>}
                     {!info?.configured && !info?.error && (
-                      <p className="muted small">{info?.reason || '把项目推送到 GitHub，或在下面填写 owner/repo，就能从这里拉取更新。'}</p>
+                      <p className="muted small">更新源已固定，点「检查更新」会读取 GitHub 上的最新发布。</p>
                     )}
                     {applying && (
                       <div className="update-progress">
@@ -488,16 +487,18 @@ export function SettingsModal({
 
                 <div className="settings-section">
                   <div className="block-title">更新源</div>
-                  <label className="field">
-                    <span className="field-label">GitHub 仓库</span>
-                    <input
-                      className="input"
-                      value={form.updateRepo}
-                      onChange={(e) => set('updateRepo', e.target.value)}
-                      placeholder="owner/repo"
-                    />
-                    <p className="muted small">例如 <code>yourname/hentaifigure</code>。如果当前目录已经是带 origin 的 git 仓库，会自动从 origin 拉取，无需填写。</p>
-                  </label>
+                  <div className="data-path-box">
+                    <IconDownload size={18} />
+                    <code>{appConfig.repoUrl.replace(/^https?:\/\//, '')}</code>
+                  </div>
+                  <p className="muted small">
+                    更新源已固定在官方仓库。发现新版本时，这里会显示版本差异和发布说明。
+                  </p>
+                  <div className="update-source-actions">
+                    <button className="text-button" onClick={() => window.hf.openExternal(appConfig.repoUrl)}>
+                      打开 GitHub 仓库
+                    </button>
+                  </div>
                   <label className="switch-row">
                     <span>
                       <strong>启动时自动检查更新</strong>
@@ -570,7 +571,7 @@ export function SettingsModal({
                 </div>
                 <div className="settings-section">
                   <div className="about-rows">
-                    <div><span>版本</span><b>v{appInfo?.version || '1.0.0'}</b></div>
+                    <div><span>版本</span><b>v{appInfo?.version || '1.1.0'}</b></div>
                     <div><span>Electron</span><b>{appInfo?.versions.electron || '—'}</b></div>
                     <div><span>Chrome</span><b>{appInfo?.versions.chrome || '—'}</b></div>
                     <div><span>Node</span><b>{appInfo?.versions.node || '—'}</b></div>
@@ -605,6 +606,9 @@ export function SettingsModal({
     </Modal>
   );
 }
+
+
+
 
 
 

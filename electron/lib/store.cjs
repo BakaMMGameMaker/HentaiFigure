@@ -32,7 +32,6 @@ const DEFAULT_CONFIG = {
   imageDetail: 'high',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   autoUpdate: true,
-  updateRepo: '',
   dailyChatEnabled: true,
   dailyChatTime: '22:00',
   apiKeyEnc: null,
@@ -142,7 +141,6 @@ class Store {
       imageDetail: this.config.imageDetail,
       systemPrompt: this.config.systemPrompt,
       autoUpdate: this.config.autoUpdate,
-      updateRepo: this.config.updateRepo,
       dailyChatEnabled: this.config.dailyChatEnabled !== false,
       dailyChatTime: this.config.dailyChatTime || '22:00',
       apiKeySet: Boolean(key),
@@ -191,7 +189,7 @@ class Store {
   updateConfig(patch) {
     const allowed = [
       'baseUrl', 'model', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
-      'systemPrompt', 'autoUpdate', 'updateRepo', 'dailyChatEnabled', 'dailyChatTime',
+      'systemPrompt', 'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
     ];
     for (const key of allowed) {
       if (patch[key] !== undefined) this.config[key] = patch[key];
@@ -353,3 +351,4 @@ module.exports = {
   DEFAULT_SYSTEM_PROMPT,
   DEFAULT_CONFIG,
 };
+

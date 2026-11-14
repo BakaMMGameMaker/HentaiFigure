@@ -96,7 +96,6 @@ export interface Config {
   imageDetail: 'high' | 'low';
   systemPrompt: string;
   autoUpdate: boolean;
-  updateRepo: string;
   dailyChatEnabled: boolean;
   dailyChatTime: string;
   apiKeySet: boolean;
@@ -269,6 +268,7 @@ declare global {
     hf: HfApi;
   }
 }
+
 
 
 
