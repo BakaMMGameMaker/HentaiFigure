@@ -2,6 +2,7 @@
 chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
+set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 
 echo ==========================================
 echo   HentaiFigure 更新
