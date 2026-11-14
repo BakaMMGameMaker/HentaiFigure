@@ -16,13 +16,15 @@ if exist ".git" (
   git pull --ff-only
   if errorlevel 1 (
     echo.
-    echo git pull 失败。你可以在应用内「设置 - 更新」里重试，或手动下载新版本覆盖程序文件。
+    echo git pull 失败。更新源固定为 https://github.com/BakaMMGameMaker/HentaiFigure
+    echo 可到 Releases 下载最新版，或检查网络后重试。
     pause
     exit /b 1
   )
 ) else (
   echo 当前不是 git 仓库，跳过 git 拉取。
-  echo 请在应用内「设置 - 更新」配置 GitHub 仓库，或手动下载新版本覆盖程序文件。
+  echo 更新源固定为 https://github.com/BakaMMGameMaker/HentaiFigure
+  echo 可到 Releases 下载最新便携版 / APK。
 )
 
 echo.
