@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ChatMessage, Phase, RitualState } from '../types';
+import type { ChatMessage, Config, Phase, RitualState } from '../types';
 import {
   PHASES, PHASE_META, formatDateCN, formatMoney, photoUrl, shotLabel, statusLabel, typeLabel,
 } from '../constants';
 import { cleanError } from '../utils';
-import { Modal, PhotoLightbox, Spinner } from '../components/ui';
+import { ManagerAvatar, Modal, PhotoLightbox, Spinner } from '../components/ui';
 import {
   IconAlert, IconArrowLeft, IconCalendar, IconCheck, IconChevronRight, IconCircleCheck,
   IconClock, IconHeart, IconImage, IconSend, IconSparkles, IconStop, IconX,
@@ -54,6 +54,7 @@ function TypingDots() {
 export function RitualPage({
   initialState,
   autoOpen,
+  config,
   apiKeySet,
   onExit,
   onRefreshData,
@@ -63,6 +64,7 @@ export function RitualPage({
 }: {
   initialState: RitualState;
   autoOpen: boolean;
+  config: Config | null;
   apiKeySet: boolean;
   onExit: () => void;
   onRefreshData: () => Promise<void> | void;
@@ -100,6 +102,7 @@ export function RitualPage({
   const lastMessage = messages[messages.length - 1];
   const canRetry = !busy && (messages.length === 0 || lastMessage?.role === 'user');
 
+  const userName = (config?.userName || '').trim() || '杂鱼';
   const phaseMeta = state.phase ? PHASE_META[state.phase] : null;
   const currentStepIndex = state.phase ? PHASES.indexOf(state.phase) : -1;
 
@@ -484,10 +487,10 @@ export function RitualPage({
                 <div><span>尾款</span><b>{formatMoney(state.item?.balance)}</b></div>
                 {state.item?.dueDate && <div><span>补款</span><b>{state.item.dueDate.slice(5)}</b></div>}
               </div>
-              {state.item?.intro && (
+              {(state.item?.thought || state.item?.intro) && (
                 <div className="ritual-item-intro">
                   <span>你最初写的</span>
-                  <p>{state.item.intro}</p>
+                  <p>{state.item.thought || state.item.intro}</p>
                 </div>
               )}
               <div className="ritual-item-memory">
@@ -498,7 +501,7 @@ export function RitualPage({
 
           <section className="chat-panel">
             <header className="chat-head">
-              <div className={`chat-avatar phase-${state.phase}`}>管</div>
+              <ManagerAvatar src={config?.managerAvatar} className={`chat-avatar phase-${state.phase}`} />
               <div className="chat-head-text">
                 <strong>收藏室管理员</strong>
                 <span><span className="online-dot" /> {busy ? '正在说话…' : '在线，替你看着仓库'}</span>
@@ -530,9 +533,9 @@ export function RitualPage({
 
               {messages.map((message) => (
                 <div key={message.id} className={`message-row ${message.role}`}>
-                  {message.role === 'assistant' && <span className={`message-avatar phase-${state.phase}`}>管</span>}
+                  {message.role === 'assistant' && <ManagerAvatar src={config?.managerAvatar} className={`message-avatar phase-${state.phase}`} />}
                   <div className="message-body">
-                    <div className="message-name">{message.role === 'assistant' ? '管理员' : '杂鱼'}</div>
+                    <div className="message-name">{message.role === 'assistant' ? '管理员' : userName}</div>
                     <div className="message-bubble">{message.content}</div>
                   </div>
                 </div>
@@ -540,9 +543,9 @@ export function RitualPage({
 
               {streaming && (
                 <div className="message-row assistant">
-                  <span className={`message-avatar phase-${state.phase}`}>管</span>
+                  <ManagerAvatar src={config?.managerAvatar} className={`message-avatar phase-${state.phase}`} />
                   <div className="message-body">
-                    <div className="message-name">{state.item?.name || '她'}</div>
+                    <div className="message-name">管理员</div>
                     <div className="message-bubble streaming">
                       {streaming}
                       <span className="stream-caret" />
@@ -553,7 +556,7 @@ export function RitualPage({
 
               {busy && !streaming && (
                 <div className="message-row assistant">
-                  <span className={`message-avatar phase-${state.phase}`}>管</span>
+                  <ManagerAvatar src={config?.managerAvatar} className={`message-avatar phase-${state.phase}`} />
                   <div className="message-body">
                     <div className="message-bubble typing-bubble"><TypingDots /></div>
                   </div>

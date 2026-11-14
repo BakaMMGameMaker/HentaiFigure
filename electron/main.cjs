@@ -100,6 +100,10 @@ function normalizeItem(input) {
   if (!ALLOWED_STATUS.has(status)) throw new Error('收藏状态不合法。');
   const type = ALLOWED_TYPES.has(input.type) ? input.type : 'other';
 
+  let characterId = optionalText(input.characterId, 80, '关联角色');
+  if (characterId && !store.getCharacter(characterId)) characterId = '';
+  const character = characterId ? store.getCharacter(characterId) : null;
+
   const photosIn = Array.isArray(input.photos) ? input.photos : [];
   if (photosIn.length > 80) throw new Error('一款周边最多 80 张照片。');
   const photos = photosIn.map((p) => validatePhoto(p, id));
@@ -124,13 +128,15 @@ function normalizeItem(input) {
     name,
     type,
     status,
-    series: optionalText(input.series, 160, '作品 / 角色'),
+    characterId,
+    series: character ? [character.source, character.name].filter(Boolean).join(' / ') : '',
     scale: optionalText(input.scale, 80, '规格'),
     originalPrice: optionalNumber(input.originalPrice, '原始价格'),
     purchasePrice: optionalNumber(input.purchasePrice, '购入价格'),
     deposit: optionalNumber(input.deposit, '定金'),
     balance: optionalNumber(input.balance, '尾款'),
-    intro: optionalText(input.intro, 8000, '简介'),
+    detail: optionalText(input.detail, 8000, '商品详情'),
+    thought: optionalText(input.thought, 8000, '最初的想法'),
     dueDate,
     photos,
     createdAt: existing?.createdAt || now,
@@ -144,6 +150,30 @@ function normalizeItem(input) {
     statusHistory,
     needsFullBodyPhoto: false,
   };
+}
+
+/** 把选中的图片缩成一张小头像，直接存进 config（data URL）。 */
+function makeAvatarDataUrl(filePath) {
+  const img = nativeImage.createFromPath(filePath);
+  if (img.isEmpty()) throw new Error('这张图片读不出来，换一张试试。');
+  const size = img.getSize();
+  const side = Math.min(size.width, size.height);
+  let square = img;
+  if (side > 0 && size.width !== size.height) {
+    square = img.crop({
+      x: Math.round((size.width - side) / 2),
+      y: Math.round((size.height - side) / 2),
+      width: side,
+      height: side,
+    });
+  }
+  const target = 320;
+  if (side > target) {
+    square = square.resize({ width: target, height: target, quality: 'best' });
+  }
+  const buffer = square.toJPEG(86);
+  if (buffer.length > 900 * 1024) throw new Error('头像太大了，换一张小一点的图片。');
+  return `data:image/jpeg;base64,${buffer.toString('base64')}`;
 }
 
 function cleanupOrphanImages() {
@@ -369,6 +399,18 @@ function registerIpc() {
     }
     if (patch.autoUpdate !== undefined) clean.autoUpdate = Boolean(patch.autoUpdate);
     if (patch.dailyChatEnabled !== undefined) clean.dailyChatEnabled = Boolean(patch.dailyChatEnabled);
+    if (patch.userName !== undefined) {
+      const userName = String(patch.userName).trim().slice(0, 24);
+      clean.userName = userName || '杂鱼';
+    }
+    if (patch.managerAvatar !== undefined) {
+      const avatar = String(patch.managerAvatar || '');
+      if (avatar && !/^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar)) {
+        throw new Error('头像数据不合法。');
+      }
+      if (avatar.length > 2_400_000) throw new Error('头像文件太大了。');
+      clean.managerAvatar = avatar;
+    }
     if (patch.dailyChatTime !== undefined) {
       const time = String(patch.dailyChatTime || '').trim();
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error('主动话题时间格式应为 HH:mm。');
@@ -379,6 +421,15 @@ function registerIpc() {
     return store.updateConfig(clean);
   });
   ipcMain.handle('config:resetPrompt', () => store.resetSystemPrompt());
+  ipcMain.handle('config:pickAvatar', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择管理员头像',
+      properties: ['openFile'],
+      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    return makeAvatarDataUrl(result.filePaths[0]);
+  });
   ipcMain.handle('config:test', async (event, input = {}) => {
     try {
       const cfg = readConfigTestInput(input);
@@ -391,6 +442,17 @@ function registerIpc() {
 
   ipcMain.handle('items:list', () => store.listItems());
   ipcMain.handle('items:newId', () => store.newId('itm'));
+
+  ipcMain.handle('characters:list', () => store.listCharacters());
+  ipcMain.handle('characters:save', (event, input = {}) => {
+    const character = store.upsertCharacter(input);
+    return character;
+  });
+  ipcMain.handle('characters:delete', (event, id) => {
+    store.deleteCharacter(String(id || ''));
+    return true;
+  });
+
   ipcMain.handle('items:save', (event, input) => {
     const item = normalizeItem(input);
     const saved = store.upsertItem(item);
@@ -486,21 +548,34 @@ function registerIpc() {
   });
 
   ipcMain.handle('chat:free:state', () => ritual.freeChatState());
-  ipcMain.handle('chat:free:send', (event, { text } = {}) => ritual.sendFreeChatUserMessage(text));
-  ipcMain.handle('chat:free:generate', (event, forceNew) => {
-    const chat = store.getFreeChat();
-    const last = chat.messages[chat.messages.length - 1];
+  ipcMain.handle('chat:free:threads', () => ritual.freeThreads());
+  ipcMain.handle('chat:free:select', (event, threadId) => ritual.freeSelectThread(String(threadId || '')));
+  ipcMain.handle('chat:free:new', (event, title) => ritual.freeNewThread(typeof title === 'string' ? title : undefined));
+  ipcMain.handle('chat:free:rename', (event, { threadId, title } = {}) => ritual.freeRenameThread(String(threadId || ''), title));
+  ipcMain.handle('chat:free:delete', (event, threadId) => ritual.freeDeleteThread(String(threadId || '')));
+  ipcMain.handle('chat:free:send', (event, { text, threadId } = {}) => ritual.sendFreeChatUserMessage(text, threadId));
+  ipcMain.handle('chat:free:generate', (event, { forceNew, threadId } = {}) => {
+    const thread = threadId ? store.getThread(threadId) : store.ensureActiveThread();
+    const last = thread?.messages?.[thread.messages.length - 1];
     if (!forceNew && last?.role === 'assistant') return { started: false };
-    ritual.generateFreeChat({}).catch(() => {});
-    return { started: true };
+    ritual.generateFreeChat({ threadId: thread?.id }).catch(() => {});
+    return { started: true, threadId: thread?.id };
   });
-  ipcMain.handle('chat:free:stop', () => {
-    ritual.stopFreeChat();
+  ipcMain.handle('chat:free:stop', (event, threadId) => {
+    ritual.stopFreeChat(threadId || undefined);
     return true;
   });
-  ipcMain.handle('chat:free:proactive', async () => {
-    const result = await ritual.maybeProactiveFreeChat(true);
-    if (result?.message) notifyFreeChat(result.message);
+  ipcMain.handle('chat:free:proactive', async (event, threadId) => {
+    const result = await ritual.maybeProactiveFreeChat(true, threadId || undefined);
+    if (result?.message) notifyFreeChat(result.message, result.threadId);
+    return result;
+  });
+  ipcMain.handle('chat:itemIntro', async (event, input = {}) => {
+    const result = await ritual.itemIntro({
+      itemId: String(input.itemId || ''),
+      mode: input.mode === 'update' ? 'update' : 'create',
+      changes: Array.isArray(input.changes) ? input.changes : [],
+    });
     return result;
   });
 
@@ -547,7 +622,7 @@ function registerIpc() {
     if (res.canceled || !res.filePath) return { canceled: true };
     const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'hf-export-'));
     try {
-      for (const name of ['config.json', 'items.json', 'daily.json', 'sessions.json', 'freechat.json']) {
+      for (const name of ['config.json', 'items.json', 'characters.json', 'daily.json', 'sessions.json', 'freechat.json']) {
         const src = path.join(store.dataDir, name);
         if (fs.existsSync(src)) fs.copyFileSync(src, path.join(stage, name));
       }
@@ -593,7 +668,7 @@ function registerIpc() {
       const root = fs.existsSync(path.join(tmp, 'items.json')) ? tmp : path.join(tmp, 'data');
       if (!fs.existsSync(path.join(root, 'items.json'))) throw new Error('备份包里没有 items.json，可能不是 HentaiFigure 的备份。');
       await store.backupData('before-import');
-      for (const name of ['config.json', 'items.json', 'daily.json', 'sessions.json', 'freechat.json']) {
+      for (const name of ['config.json', 'items.json', 'characters.json', 'daily.json', 'sessions.json', 'freechat.json']) {
         const src = path.join(root, name);
         if (fs.existsSync(src)) fs.copyFileSync(src, path.join(store.dataDir, name));
       }
@@ -658,9 +733,9 @@ async function runStartupUpdateCheck() {
   } catch {}
 }
 
-function notifyFreeChat(message) {
+function notifyFreeChat(message, threadId) {
   if (!message) return;
-  send({ type: 'free:proactive', message });
+  send({ type: 'free:proactive', message, threadId, channel: 'freechat' });
   try {
     if (Notification.isSupported()) {
       const body = String(message.content || '').replace(/\s+/g, ' ').slice(0, 140);
@@ -674,7 +749,7 @@ function notifyFreeChat(message) {
         if (mainWindow.isMinimized()) mainWindow.restore();
         mainWindow.show();
         mainWindow.focus();
-        send({ type: 'free:focus' });
+        send({ type: 'free:focus', threadId, channel: 'freechat' });
       });
       notification.show();
     }
@@ -687,7 +762,7 @@ function startFreeChatWatch() {
     try {
       if (!ritual || ritual.freeChatBusy) return;
       const result = await ritual.maybeProactiveFreeChat(false);
-      if (result?.message) notifyFreeChat(result.message);
+      if (result?.message) notifyFreeChat(result.message, result.threadId);
     } catch {}
   };
   setTimeout(tick, 6500);

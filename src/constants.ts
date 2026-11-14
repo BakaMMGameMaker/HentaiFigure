@@ -91,12 +91,12 @@ export function photoUrl(file: string | undefined, thumb = false, fallback?: str
 }
 
 const UNIVERSAL_GREETINGS = [
-  '收藏室的门开着，杂鱼。',
+  '收藏室的门开着，{name}。',
   '今天也来看塑料老婆了吗？',
   '你的手办们在柜子里看着你哦。',
   '呼吸放轻一点，她们在睡觉。',
   '要上贡了吗？我等你很久了。',
-  '眼睛往哪里看呢，杂鱼。',
+  '眼睛往哪里看呢，{name}。',
   '灰尘和欲望，今天先清哪个？',
   '有点无聊，来陪我说说话。',
   '你今天的气味，闻起来像刚拆封。',
@@ -111,13 +111,13 @@ const OWNED_GREETINGS = [
   '全身照都拍了，还装什么正经？',
   '柜子里那位，昨天被你冷落了。',
   '想从哪个部位开始擦？',
-  '软布准备好了吗，杂鱼？',
+  '软布准备好了吗，{name}？',
   '她的裙摆上有一层灰，你心疼吗？',
   '擦的时候，手别抖。',
 ];
 
 const PENDING_GREETINGS = [
-  '杂鱼，存款还够补尾款吗？',
+  '{name}，存款还够补尾款吗？',
   '补款日快到了，别装死。',
   '定金都交了，尾款还想赖？',
   '钱包在哭，你在看新品。',
@@ -140,32 +140,46 @@ const WATCHING_GREETINGS = [
 
 const EMPTY_GREETINGS = [
   '收藏室还是空的。先放点什么进来吧。',
-  '杂鱼，你连一只塑料老婆都没有？',
+  '{name}，你连一只塑料老婆都没有？',
   '从第一款开始吧，我陪你挑。',
   '空柜子会寂寞的，你听。',
 ];
 
 const COMPLETE_GREETINGS = [
   '今日已上贡。乖，去睡吧。',
-  '今天很努力了，杂鱼。',
+  '今天很努力了，{name}。',
   '上贡完毕，余韵还在吗？',
   '明天再来，别熬夜。',
   '今天的你，还算是有点用。',
 ];
 
-function pickFrom(list: string[]): string {
-  return list[Math.floor(Math.random() * list.length)] || list[0];
+export const DEFAULT_USER_NAME = '杂鱼';
+
+/** 把文案里的 {name} 换成用户设置的昵称。 */
+export function withUserName(text: string, userName?: string | null): string {
+  const name = (userName || '').trim() || DEFAULT_USER_NAME;
+  return String(text || '').replace(/\{name\}/g, name);
 }
 
-export function pickGreeting(items: Item[], ritualComplete: boolean, counts?: { owned: number; pending: number; watching: number }): string {
-  if (ritualComplete) return pickFrom(COMPLETE_GREETINGS);
-  if (!items.length) return pickFrom(EMPTY_GREETINGS);
+function pickFrom(list: string[], userName?: string | null): string {
+  const raw = list[Math.floor(Math.random() * list.length)] || list[0];
+  return withUserName(raw, userName);
+}
+
+export function pickGreeting(
+  items: Item[],
+  ritualComplete: boolean,
+  counts?: { owned: number; pending: number; watching: number },
+  userName?: string | null,
+): string {
+  if (ritualComplete) return pickFrom(COMPLETE_GREETINGS, userName);
+  if (!items.length) return pickFrom(EMPTY_GREETINGS, userName);
   const pools: string[][] = [UNIVERSAL_GREETINGS];
   if ((counts?.owned ?? 0) > 0) pools.push(OWNED_GREETINGS);
   if ((counts?.pending ?? 0) > 0) pools.push(PENDING_GREETINGS);
   if ((counts?.watching ?? 0) > 0) pools.push(WATCHING_GREETINGS);
   const pool = pools[Math.floor(Math.random() * pools.length)];
-  return pickFrom(pool);
+  return pickFrom(pool, userName);
 }
 
 export function itemCover(item: Item): string {

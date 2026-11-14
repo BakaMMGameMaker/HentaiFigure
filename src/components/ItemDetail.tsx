@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Item } from '../types';
+import type { Character, Item } from '../types';
 import {
   formatDateCN, formatMoney, photoUrl, shotLabel, statusLabel, typeLabel,
 } from '../constants';
@@ -10,12 +10,16 @@ import {
 
 export function ItemDetail({
   item,
+  characters,
+  relatedItems,
   onClose,
   onEdit,
   onDelete,
   onViewMemory,
 }: {
   item: Item;
+  characters: Character[];
+  relatedItems: Item[];
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -26,6 +30,8 @@ export function ItemDetail({
   const [lightbox, setLightbox] = useState(false);
   const current = photos[active] || photos[0];
   const mainSrc = current ? photoUrl(current.file) : '';
+  const character = characters.find((c) => c.id === item.characterId) || null;
+  const siblings = character ? relatedItems.filter((i) => i.id !== item.id) : [];
 
   return (
     <Modal className="modal-detail" onClose={onClose}>
@@ -62,12 +68,28 @@ export function ItemDetail({
               <h2>{item.name}</h2>
               <div className="detail-sub">
                 {typeLabel(item.type)}
-                {item.series ? ` · ${item.series}` : ''}
+                {character ? ` · ${character.name}` : item.series ? ` · ${item.series}` : ''}
                 {item.scale ? ` · ${item.scale}` : ''}
               </div>
             </div>
             <button className="icon-button" onClick={onClose} aria-label="关闭"><IconX size={20} /></button>
           </div>
+
+          {character && (
+            <div className="detail-character">
+              <span className="character-badge large">{character.name.slice(0, 1)}</span>
+              <div>
+                <strong>{character.name}</strong>
+                <small>{character.source ? `出自《${character.source}》` : '未填写作品'}</small>
+                {character.description && <p>{character.description}</p>}
+                {siblings.length > 0 && (
+                  <small className="detail-character-more">
+                    同角色还有 {siblings.length} 款：{siblings.slice(0, 4).map((i) => i.name).join('、')}
+                  </small>
+                )}
+              </div>
+            </div>
+          )}
 
           {item.dueDate && (
             <div className="detail-due">
@@ -83,10 +105,17 @@ export function ItemDetail({
             <div><span>尾款</span><b>{formatMoney(item.balance)}</b></div>
           </div>
 
-          {item.intro && (
+          {item.detail && (
+            <div className="detail-section">
+              <div className="detail-section-title">商品详情</div>
+              <p className="detail-intro">{item.detail}</p>
+            </div>
+          )}
+
+          {(item.thought || item.intro) && (
             <div className="detail-section">
               <div className="detail-section-title">最初的想法</div>
-              <p className="detail-intro">{item.intro}</p>
+              <p className="detail-intro">{item.thought || item.intro}</p>
             </div>
           )}
 
@@ -114,4 +143,3 @@ export function ItemDetail({
     </Modal>
   );
 }
-

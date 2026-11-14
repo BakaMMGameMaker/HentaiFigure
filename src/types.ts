@@ -17,17 +17,30 @@ export interface Photo {
   createdAt?: number;
 }
 
+export interface Character {
+  id: string;
+  name: string;
+  source?: string;
+  description?: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
 export interface Item {
   id: string;
   name: string;
   type: ItemType;
   status: ItemStatus;
+  characterId?: string;
   series?: string;
   scale?: string;
   originalPrice?: number | null;
   purchasePrice?: number | null;
   deposit?: number | null;
   balance?: number | null;
+  detail?: string;
+  thought?: string;
+  /** @deprecated kept only for reading very old data; migrated into `thought`. */
   intro?: string;
   dueDate?: string;
   photos: Photo[];
@@ -44,6 +57,12 @@ export interface ChatMessage {
   ts: number;
   reasoning?: string;
   toolTrace?: { name: string; args: Record<string, unknown>; result: string }[];
+}
+
+export interface ItemChange {
+  label: string;
+  before: string;
+  after: string;
 }
 
 export interface Session {
@@ -95,6 +114,8 @@ export interface Config {
   maxPhotosPerRequest: number;
   imageDetail: 'high' | 'low';
   systemPrompt: string;
+  userName: string;
+  managerAvatar: string;
   autoUpdate: boolean;
   dailyChatEnabled: boolean;
   dailyChatTime: string;
@@ -185,8 +206,34 @@ export interface HfEvent {
   [key: string]: unknown;
 }
 
+export interface ChatThreadSummary {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+  preview: string;
+  origin?: ChatOrigin;
+  itemId?: string | null;
+}
+
+export type ChatOrigin = 'manual' | 'daily' | 'item';
+
+export interface ChatThread {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+  origin?: ChatOrigin;
+  itemId?: string | null;
+}
+
 export interface FreeChatState {
   messages: ChatMessage[];
+  threads: ChatThreadSummary[];
+  activeId: string;
+  lastMessage: ChatMessage | null;
   busy: boolean;
   lastProactiveDay: string | null;
   lastProactiveAt: number | null;
@@ -206,7 +253,13 @@ export interface HfApi {
     get(): Promise<Config>;
     save(patch: Record<string, unknown>): Promise<Config>;
     resetPrompt(): Promise<Config>;
+    pickAvatar(): Promise<string | null>;
     test(input: { apiKey?: string; baseUrl?: string; model?: string }): Promise<{ ok: boolean; reply?: string; model?: string; message?: string }>;
+  };
+  characters: {
+    list(): Promise<Character[]>;
+    save(character: Partial<Character>): Promise<Character>;
+    remove(id: string): Promise<boolean>;
   };
   items: {
     list(): Promise<Item[]>;
@@ -235,10 +288,16 @@ export interface HfApi {
     generate(sessionId: string): Promise<{ started: boolean }>;
     stop(sessionId: string): Promise<boolean>;
     freeState(): Promise<FreeChatState>;
-    freeSend(text: string): Promise<ChatMessage>;
-    freeGenerate(forceNew?: boolean): Promise<{ started: boolean }>;
-    freeStop(): Promise<boolean>;
-    freeProactive(): Promise<{ message?: ChatMessage; skipped?: boolean; reason?: string }>;
+    freeSend(text: string, threadId?: string): Promise<{ message: ChatMessage; threadId: string }>;
+    freeGenerate(forceNew?: boolean, threadId?: string): Promise<{ started: boolean }>;
+    freeStop(threadId?: string): Promise<boolean>;
+    freeProactive(threadId?: string): Promise<{ message?: ChatMessage; skipped?: boolean; reason?: string; threadId?: string }>;
+    freeThreads(): Promise<ChatThreadSummary[]>;
+    freeSelect(threadId: string): Promise<FreeChatState>;
+    freeNew(title?: string): Promise<{ id: string; state: FreeChatState }>;
+    freeRename(threadId: string, title: string): Promise<ChatThreadSummary[]>;
+    freeDelete(threadId: string): Promise<{ state: FreeChatState }>;
+    itemIntro(input: { itemId: string; mode: 'create' | 'update'; changes?: ItemChange[] }): Promise<{ threadId?: string; started?: boolean; skipped?: string }>;
   };
   calendar: {
     month(year: number, month: number): Promise<Record<string, CalendarDay>>;

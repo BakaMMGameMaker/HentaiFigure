@@ -125,6 +125,26 @@ const MEMORY_TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'list_characters',
+      description: '列出收藏室里所有角色档案：角色名、出自哪部作品、背景设定、关联了几款周边。想在聊天里对某个 IP / 角色有更完整的背景时先查这个。',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_character',
+      description: '读取某个角色档案的完整设定，以及关联在这个角色名下的所有周边和上贡记录。参数是 list_characters 或 read_item 返回的 characterId。',
+      parameters: {
+        type: 'object',
+        properties: { character_id: { type: 'string' } },
+        required: ['character_id'],
+      },
+    },
+  },
 ];
 
 function pad2(n) {
@@ -197,11 +217,18 @@ class RitualService {
     this.controllers = new Map();
     this.freeChatBusy = false;
     this.freeChatController = null;
+    this.freeChatThreadId = null;
   }
 
   // ---------- dates ----------
   today() {
     return localDateKey();
+  }
+
+  /** 用户设置的昵称；管理员照着这个称呼他。 */
+  userName() {
+    const name = String(this.store.config.userName || '').trim();
+    return name || '杂鱼';
   }
 
   // ---------- state ----------
@@ -531,21 +558,45 @@ class RitualService {
     return scored.slice(0, max).map((s) => s.photo);
   }
 
+  characterFor(item) {
+    if (!item || !item.characterId) return null;
+    return this.store.getCharacter(item.characterId);
+  }
+
+  characterContext(character, items) {
+    if (!character) return '';
+    const lines = [`角色：${character.name}`];
+    if (character.source) lines.push(`出自作品：${character.source}`);
+    if (character.description) lines.push(`角色背景：${character.description}`);
+    const related = (items || this.store.listItems()).filter((i) => i.characterId === character.id);
+    if (related.length > 1) {
+      lines.push(`这个角色在收藏室里还有 ${related.length - 1} 款周边：${related.filter((i) => i.name).map((i) => i.name).slice(0, 8).join('、')}。`);
+    }
+    return `【角色档案】\n${lines.join('\n')}`;
+  }
+
   itemContext(item) {
     if (!item) return '（这款周边的资料已经被删除了。）';
+    const name = this.userName();
     const lines = [];
     lines.push(`名称：${item.name}`);
     lines.push(`类型：${TYPE_LABELS[item.type] || item.type || '周边'}`);
     const statusLabel = item.status === 'owned' ? '已拥有' : item.status === 'pending' ? '待补款' : '观望中（购物车）';
     lines.push(`状态：${statusLabel}`);
-    if (item.series) lines.push(`作品 / 角色：${item.series}`);
+    const character = this.characterFor(item);
+    if (character) {
+      lines.push(`角色：${character.name}${character.source ? `（出自 ${character.source}）` : ''}`);
+    } else if (item.series) {
+      lines.push(`作品 / 角色：${item.series}`);
+    }
     if (item.scale) lines.push(`规格：${item.scale}`);
     if (item.originalPrice != null) lines.push(`原始价格：${moneyLabel(item.originalPrice)}`);
     if (item.purchasePrice != null) lines.push(`购入价格：${moneyLabel(item.purchasePrice)}`);
     if (item.deposit != null) lines.push(`定金：${moneyLabel(item.deposit)}`);
     if (item.balance != null) lines.push(`尾款：${moneyLabel(item.balance)}`);
     if (item.dueDate) lines.push(`补款日期：${dateLabel(item.dueDate)}`);
-    if (item.intro) lines.push(`杂鱼最初写的简介（他当时的感想，可作为话题素材）：\n${item.intro}`);
+    if (item.detail) lines.push(`商品详情 / 情报（这款周边本身是什么、为什么会有）：\n${item.detail}`);
+    if (item.thought) lines.push(`${name} 当时写下的「最初的想法」（他买下或加购时的心路历程，可作为鉴赏和调戏的素材）：\n${item.thought}`);
     const photos = Array.isArray(item.photos) ? item.photos : [];
     lines.push(`照片共 ${photos.length} 张：${photos.map((p, i) => `${i + 1}.${SHOT_LABELS[p.shot] || '照片'}${p.caption ? `（${p.caption}）` : ''}`).join('、')}`);
     return lines.join('\n');
@@ -579,18 +630,21 @@ class RitualService {
     const config = this.store.config;
     const persona = (config.systemPrompt || '').trim();
     const meta = PHASE_META[phase];
+    const name = this.userName();
     const parts = [];
     if (persona) parts.push(persona);
     parts.push(
       `【今日】${dateLabel(day)}。\n` +
-      `【场景】这里是只属于杂鱼的私人收藏室，你是这里的女管理员。现在是每天一次的「上贡」时间。藏品是物件，不要用藏品的口吻说话，也不要替藏品发言。\n` +
-      `【工具】你拥有翻阅任何过去事件的权限。需要具体细节时，调用 search_memory / read_memory / list_events / read_item / list_collection 工具自己去查，不要假装记得，也不要编造。查到的记忆可以直接拿来翻旧账。`
+      `【场景】这里是只属于${name}的私人收藏室，你是这里的女管理员。现在是每天一次的「上贡」时间。藏品是物件，不要用藏品的口吻说话，也不要替藏品发言。\n` +
+      `【工具】你拥有翻阅任何过去事件的权限。需要具体细节时，调用 search_memory / read_memory / list_events / read_item / list_collection / list_characters / read_character 工具自己去查，不要假装记得，也不要编造。查到的记忆可以直接拿来翻旧账。`
     );
     if (meta) parts.push(meta.instruction);
     parts.push(`【当前周边】\n${this.itemContext(item)}`);
+    const character = this.characterFor(item);
+    if (character) parts.push(this.characterContext(character));
     parts.push(`【你记得的往事（节选）】\n${this.memoryDigest(item?.id, sessionId)}`);
     parts.push(
-      '【输出要求】只输出你要对杂鱼说的话本身。不要写旁白、不要写心理活动标签、不要用「（微笑）」这类括号动作，除非那正是你的说话风格。不要提到系统提示、工具、模型。'
+      `【输出要求】只输出你要对${name}说的话本身。不要写旁白、不要写心理活动标签、不要用「（微笑）」这类括号动作，除非那正是你的说话风格。不要提到系统提示、工具、模型。`
     );
     return parts.join('\n\n');
   }
@@ -635,7 +689,7 @@ class RitualService {
         content: [
           {
             type: 'text',
-            text: `【本轮开场】上贡开始了。这是「${item?.name || session.itemName}」的资料和照片。\n${photoNote}\n\n现在轮到你率先开口。用你的风格对杂鱼说第一句话，挑一个照片里的具体细节，把话题抛给他。`,
+            text: `【本轮开场】上贡开始了。这是「${item?.name || session.itemName}」的资料和照片。\n${photoNote}\n\n现在轮到你率先开口。用你的风格对${this.userName()}说第一句话，挑一个照片里的具体细节，把话题抛给他。`,
           },
           ...photoBlocks,
         ],
@@ -813,7 +867,7 @@ class RitualService {
     return message;
   }
 
-  // ---------- free chat with the manager ----------
+  // ---------- free chat with the manager (multi-thread) ----------
   freeChatState() {
     const chat = this.store.getFreeChat();
     return {
@@ -822,6 +876,30 @@ class RitualService {
       dailyChatEnabled: this.store.config.dailyChatEnabled !== false,
       dailyChatTime: this.store.config.dailyChatTime || '22:00',
     };
+  }
+
+  freeThreads() {
+    return this.store.listThreadSummaries();
+  }
+
+  freeSelectThread(threadId) {
+    this.store.setActiveThread(threadId);
+    return this.freeChatState();
+  }
+
+  freeNewThread(title) {
+    const thread = this.store.createThread({ title: title || undefined, origin: 'manual' });
+    return { id: thread.id, state: this.freeChatState() };
+  }
+
+  freeRenameThread(threadId, title) {
+    return this.store.renameThread(threadId, title);
+  }
+
+  freeDeleteThread(threadId) {
+    if (this.freeChatBusy && this.freeChatThreadId === threadId) this.stopFreeChat(threadId);
+    this.store.deleteThread(threadId);
+    return { state: this.freeChatState() };
   }
 
   collectionDigest() {
@@ -838,104 +916,168 @@ class RitualService {
       const price = item.status === 'pending'
         ? `尾款 ${moneyLabel(item.balance)}${item.dueDate ? `，补款 ${dateLabel(item.dueDate)}` : ''}`
         : `价格 ${moneyLabel(item.purchasePrice ?? item.originalPrice)}`;
+      const character = this.characterFor(item);
+      const roleText = character ? `，角色 ${character.name}` : '';
       const photoLabels = (item.photos || []).map((p) => SHOT_LABELS[p.shot] || '照片').slice(0, 8).join('/');
-      lines.push(`- ${item.name}（${TYPE_LABELS[item.type] || '周边'}，${statusText}，${price}）照片：${photoLabels || '无'}`);
+      lines.push(`- ${item.name}（${TYPE_LABELS[item.type] || '周边'}${roleText}，${statusText}，${price}）照片：${photoLabels || '无'}`);
     }
-    const intros = items.filter((i) => i.intro).slice(0, 3);
+    const intros = items.filter((i) => i.detail || i.thought).slice(0, 3);
     for (const item of intros) {
-      lines.push(`· ${item.name} 的简介：${truncate(item.intro, 160)}`);
+      if (item.detail) lines.push(`· ${item.name} 的商品详情：${truncate(item.detail, 160)}`);
+      if (item.thought) lines.push(`· ${item.name} 的最初想法：${truncate(item.thought, 160)}`);
     }
     return lines.join('\n');
   }
 
-  buildFreeChatSystemPrompt() {
+  characterDigest() {
+    const characters = this.store.listCharacters();
+    if (!characters.length) return '';
+    const items = this.store.listItems();
+    const lines = characters.slice(0, 16).map((character) => {
+      const related = items.filter((i) => i.characterId === character.id);
+      const bits = [`- ${character.name}`];
+      if (character.source) bits.push(`出自《${character.source}》`);
+      bits.push(related.length ? `收藏室里 ${related.length} 款周边` : '还没有关联的周边');
+      if (character.description) bits.push(truncate(character.description.replace(/\s+/g, ' '), 180));
+      return bits.join('，');
+    });
+    if (characters.length > 16) lines.push(`- ……还有 ${characters.length - 16} 个角色档案。`);
+    return lines.join('\n');
+  }
+
+  buildFreeChatSystemPrompt(thread) {
     const config = this.store.config;
     const persona = (config.systemPrompt || '').trim();
+    const name = this.userName();
     const parts = [];
     if (persona) parts.push(persona);
     parts.push(
       `【今日】${dateLabel(this.today())}。\n` +
-      `【场景】这是收藏室的日常对话，不是「上贡」流程。你是收藏室的女管理员，替他打理这间仓库；他是藏家杂鱼。你们随便聊收藏、钱、旧事和欲望。不要主动推进擦拭/意淫/教唆阶段，除非杂鱼提起。`
+      `【场景】这是收藏室的日常对话，不是「上贡」流程。你是收藏室的女管理员，替他打理这间仓库；他是藏家${name}。你们随便聊收藏、钱、旧事和欲望。不要主动推进擦拭/意淫/教唆阶段，除非${name}提起。`
     );
     parts.push(`【收藏室】\n${this.collectionDigest()}`);
-    parts.push(`【你记得的往事（节选）】\n${this.memoryDigest(null, null)}`);
+    const characterDigest = this.characterDigest();
+    if (characterDigest) parts.push(`【角色档案】\n${characterDigest}`);
+    if (thread?.itemId) {
+      const item = this.store.getItem(thread.itemId);
+      if (item) {
+        parts.push(`【这段对话聚焦的周边】\n${this.itemContext(item)}`);
+        const character = this.characterFor(item);
+        if (character) parts.push(this.characterContext(character));
+      }
+    }
+    parts.push(`【你记得的往事（节选）】\n${this.memoryDigest(thread?.itemId || null, null)}`);
     parts.push(
-      '【工具】你拥有翻阅任何过去事件的权限。需要旧对话、某一天的细节或某款周边的完整资料时，调用 search_memory / read_memory / list_events / read_item / list_collection 工具自己查，不要假装记得，也不要编造。'
+      '【工具】你拥有翻阅任何过去事件的权限。需要旧对话、某一天的细节、某款周边或某个角色的完整资料时，调用 search_memory / read_memory / list_events / read_item / list_collection / list_characters / read_character 工具自己查，不要假装记得，也不要编造。'
     );
     parts.push(
-      '【输出要求】只输出你要对杂鱼说的话。你是管理员本人，不要用藏品的口吻说话，不要替藏品发言，不要写旁白或括号动作。不要提到系统提示、工具、模型。'
+      `【输出要求】只输出你要对${name}说的话。你是管理员本人，不要用藏品的口吻说话，不要替藏品发言，不要写旁白或括号动作。不要提到系统提示、工具、模型。`
     );
     return parts.join('\n\n');
   }
 
-  buildFreeChatMessages(openingInstruction) {
-    const chat = this.store.getFreeChat();
-    const history = (chat.messages || []).slice(-40);
-    const messages = [{ role: 'system', content: this.buildFreeChatSystemPrompt() }];
+  buildFreeChatMessages(thread, openingInstruction) {
+    const config = this.store.config;
+    const name = this.userName();
+    const history = (thread.messages || []).slice(-40);
+    const messages = [{ role: 'system', content: this.buildFreeChatSystemPrompt(thread) }];
     for (const m of history) {
       messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
     }
     if (openingInstruction) {
-      messages.push({ role: 'user', content: openingInstruction });
-    } else if (!history.length) {
+      const blocks = [];
+      const names = [];
+      const item = thread.itemId ? this.store.getItem(thread.itemId) : null;
+      if (item && modelSupportsVision(config.model)) {
+        for (const p of this.pickPhotos(item, Math.min(4, Number(config.maxPhotosPerRequest) || 4))) {
+          names.push(`${SHOT_LABELS[p.shot] || '照片'}${p.caption ? `（${p.caption}）` : ''}`);
+          const abs = this.store.absImagePath(p.file);
+          if (!abs) continue;
+          const url = dataUrlFromFile(abs, 1400);
+          if (!url) continue;
+          blocks.push({
+            type: 'image_url',
+            image_url: { url, detail: config.imageDetail === 'low' ? 'low' : 'high' },
+          });
+        }
+      }
+      const note = blocks.length
+        ? `\n\n【随消息附上的照片】按顺序是：${names.join('、')}。请真的看图再说话。`
+        : '';
       messages.push({
         role: 'user',
-        content:
-          '【日常开场】杂鱼刚打开收藏室。以管理员的身份主动开口，从收藏室最近的情况、某件藏品或你记得的旧事里挑一个点，调侃他、撩他，把话题抛给他。不要提这是系统提醒。',
+        content: blocks.length
+          ? [{ type: 'text', text: `${openingInstruction}${note}` }, ...blocks]
+          : openingInstruction,
       });
+    } else if (!history.length) {
+      const item = thread?.itemId ? this.store.getItem(thread.itemId) : null;
+      if (item) {
+        messages.push({
+          role: 'user',
+          content:
+            `【藏品话题开场】这是${name}收藏室里的「${item.name}」。\n${this.itemContext(item)}\n\n` +
+            '以管理员的身份围绕这款周边主动开口：挑一个具体细节评价、调戏或质问，把话题抛给他。不要提这是系统提醒。',
+        });
+      } else {
+        messages.push({
+          role: 'user',
+          content:
+            `【日常开场】${name}刚打开收藏室。以管理员的身份主动开口，从收藏室最近的情况、某件藏品或你记得的旧事里挑一个点，调侃他、撩他，把话题抛给他。不要提这是系统提醒。`,
+        });
+      }
     }
     return messages;
   }
 
-  freeChatAppend(message) {
-    const chat = this.store.getFreeChat();
-    chat.messages = Array.isArray(chat.messages) ? chat.messages : [];
-    chat.messages.push(message);
-    chat.updatedAt = Date.now();
-    this.store.putFreeChat(chat);
-  }
-
-  async sendFreeChatUserMessage(text) {
+  async sendFreeChatUserMessage(text, threadId) {
     if (this.freeChatBusy) throw new Error('管理员还在说话，等一句说完。');
     const content = String(text || '').trim();
     if (!content) throw new Error('说点什么再发。');
     if (content.length > 4000) throw new Error('一次最多 4000 字。');
+    const thread = threadId ? this.store.getThread(threadId) : this.store.ensureActiveThread();
+    if (!thread) throw new Error('这个对话不在了。');
     const message = {
       id: this.store.newId('msg'),
       role: 'user',
       content,
       ts: Date.now(),
     };
-    this.freeChatAppend(message);
-    return message;
+    const updated = this.store.appendThreadMessage(thread.id, message);
+    this.sendEvent({ type: 'free:threads', threads: this.store.listThreadSummaries(), threadId: thread.id, channel: 'freechat' });
+    return { message, threadId: updated.id };
   }
 
-  stopFreeChat() {
+  stopFreeChat(threadId) {
+    if (threadId && this.freeChatThreadId && threadId !== this.freeChatThreadId) return;
     try { this.freeChatController?.abort(); } catch {}
   }
 
-  async generateFreeChat({ openingInstruction, proactive = false } = {}) {
+  async generateFreeChat({ openingInstruction, proactive = false, threadId } = {}) {
     if (this.freeChatBusy) return null;
-    const chat = this.store.getFreeChat();
-    const last = chat.messages[chat.messages.length - 1];
+    const thread = threadId ? this.store.getThread(threadId) : this.store.ensureActiveThread();
+    if (!thread) throw new Error('这个对话不在了。');
+    const last = thread.messages[thread.messages.length - 1];
     if (!openingInstruction && last?.role === 'assistant') return null;
 
     const apiKey = this.store.getApiKey();
     if (!apiKey) {
       const err = new ApiError('missing key', { code: 'NO_KEY' });
-      this.sendEvent({ type: 'chat:error', sessionId: 'freechat', message: friendlyError(err) });
+      this.sendEvent({ type: 'chat:error', sessionId: thread.id, channel: 'freechat', message: friendlyError(err) });
       throw err;
     }
 
     this.freeChatBusy = true;
+    this.freeChatThreadId = thread.id;
     const controller = new AbortController();
     this.freeChatController = controller;
-    const sessionId = 'freechat';
-    this.sendEvent({ type: 'chat:start', sessionId, proactive });
+    const sessionId = thread.id;
+    const eventBase = { sessionId, threadId, channel: 'freechat' };
+    this.sendEvent({ type: 'chat:start', ...eventBase, proactive });
     let full = '';
     let reasoning = '';
     const toolTrace = [];
-    const working = this.buildFreeChatMessages(openingInstruction);
+    const working = this.buildFreeChatMessages(thread, openingInstruction);
 
     try {
       for (let round = 0; round < 4; round += 1) {
@@ -947,11 +1089,11 @@ class RitualService {
           signal: controller.signal,
           onDelta: (text) => {
             full += text;
-            this.sendEvent({ type: 'chat:delta', sessionId, text });
+            this.sendEvent({ type: 'chat:delta', ...eventBase, text });
           },
           onReasoning: (text) => {
             reasoning += text;
-            this.sendEvent({ type: 'chat:reasoning', sessionId, text });
+            this.sendEvent({ type: 'chat:reasoning', ...eventBase, text });
           },
         });
 
@@ -967,13 +1109,13 @@ class RitualService {
           };
           if (result.content) {
             full = result.content;
-            this.sendEvent({ type: 'chat:reset', sessionId, text: full });
+            this.sendEvent({ type: 'chat:reset', ...eventBase, text: full });
           }
           working.push(assistantToolMessage);
           for (const tc of assistantToolMessage.tool_calls) {
             let args = {};
             try { args = JSON.parse(tc.function.arguments || '{}'); } catch { args = {}; }
-            this.sendEvent({ type: 'chat:tool', sessionId, name: tc.function.name, args, status: 'running' });
+            this.sendEvent({ type: 'chat:tool', ...eventBase, name: tc.function.name, args, status: 'running' });
             let toolResult;
             try {
               toolResult = this.executeTool(tc.function.name, args);
@@ -983,7 +1125,7 @@ class RitualService {
             const text = JSON.stringify(toolResult);
             toolTrace.push({ name: tc.function.name, args, result: truncate(text, 500) });
             this.sendEvent({
-              type: 'chat:tool', sessionId, name: tc.function.name, args,
+              type: 'chat:tool', ...eventBase, name: tc.function.name, args,
               status: 'done', preview: truncate(text, 160),
             });
             working.push({ role: 'tool', tool_call_id: tc.id, content: truncate(text, 12000) });
@@ -1007,23 +1149,71 @@ class RitualService {
         reasoning: reasoning ? truncate(reasoning, 6000) : '',
         toolTrace: toolTrace.length ? toolTrace : undefined,
       };
-      this.freeChatAppend(message);
-      this.sendEvent({ type: 'chat:done', sessionId, message, proactive });
+      const appended = this.store.appendThreadMessage(thread.id, message);
+      if (!appended) {
+        this.sendEvent({ type: 'chat:stopped', ...eventBase });
+        return null;
+      }
+      this.sendEvent({
+        type: 'chat:done', ...eventBase, message, proactive,
+        threads: this.store.listThreadSummaries(),
+      });
       return message;
     } catch (err) {
       if (controller.signal.aborted) {
-        this.sendEvent({ type: 'chat:stopped', sessionId });
+        this.sendEvent({ type: 'chat:stopped', ...eventBase });
       } else {
-        this.sendEvent({ type: 'chat:error', sessionId, message: friendlyError(err) });
+        this.sendEvent({ type: 'chat:error', ...eventBase, message: friendlyError(err) });
       }
       throw err;
     } finally {
       this.freeChatBusy = false;
       this.freeChatController = null;
+      this.freeChatThreadId = null;
     }
   }
 
-  async maybeProactiveFreeChat(force = false) {
+  /**
+   * 新增 / 编辑藏品后，让管理员主动开一段关于这款藏品的对话。
+   * mode = 'create' 时介绍新入库的藏品；'update' 时针对前后差异开口。
+   */
+  async itemIntro({ itemId, mode = 'create', changes = [] } = {}) {
+    const item = this.store.getItem(itemId);
+    if (!item) throw new Error('这款周边已经被删除了。');
+    if (!this.store.getApiKey()) return { skipped: 'no-key' };
+    if (this.freeChatBusy) return { skipped: 'busy' };
+
+    const name = this.userName();
+    const titleBase = mode === 'update' ? '藏品变化' : '新藏品';
+    const title = `${titleBase} · ${item.name}`.slice(0, 40);
+    const thread = this.store.createThread({ title, origin: 'item', itemId: item.id });
+    const lines = [];
+    if (mode === 'update') {
+      lines.push(`【藏品资料更新】${name}刚重新编辑了「${item.name}」。`);
+      const list = (Array.isArray(changes) ? changes : [])
+        .filter((c) => c && c.label)
+        .slice(0, 20)
+        .map((c) => `· ${c.label}：${String(c.before || '（空）')} → ${String(c.after || '（空）')}`);
+      if (list.length) lines.push(`前后差异：\n${list.join('\n')}`);
+      else lines.push('资料被重新保存了一遍，但没看出实质变化。');
+      lines.push(`它现在的资料：\n${this.itemContext(item)}`);
+    } else {
+      lines.push(`【新藏品入库】${name}刚刚把「${item.name}」记进了收藏室。`);
+      lines.push(`这是它的完整资料：\n${this.itemContext(item)}`);
+    }
+    const character = this.characterFor(item);
+    if (character) lines.push(this.characterContext(character));
+    lines.push(
+      '现在以管理员的身份主动开口。围绕这款周边本身' +
+      (mode === 'update' ? '、尤其是这次改动的地方' : '、他的品味和动机') +
+      '，挑一个具体细节评价、调戏或质问，把话题抛给他。不要提这是系统提醒，也不要复述资料清单。2～4 段以内。'
+    );
+    const instruction = lines.join('\n\n');
+    this.generateFreeChat({ openingInstruction: instruction, threadId: thread.id, proactive: true }).catch(() => {});
+    return { threadId: thread.id, started: true };
+  }
+
+  async maybeProactiveFreeChat(force = false, threadId) {
     const config = this.store.config;
     if (!force && config.dailyChatEnabled === false) return { skipped: true, reason: 'disabled' };
     if (!this.store.getApiKey()) return { skipped: true, reason: 'no-key' };
@@ -1038,10 +1228,9 @@ class RitualService {
       if (date.getHours() * 60 + date.getMinutes() < hh * 60 + mm) {
         return { skipped: true, reason: 'not-due' };
       }
-      const last = chat.messages[chat.messages.length - 1];
+      const last = chat.lastMessage;
       if (last && now - last.ts < 30 * 60 * 1000) {
-        chat.lastProactiveDay = day;
-        this.store.putFreeChat(chat);
+        this.store.putFreeChat({ lastProactiveDay: day });
         return { skipped: true, reason: 'recent-chat' };
       }
       if (chat.lastAttemptAt && now - chat.lastAttemptAt < 10 * 60 * 1000) {
@@ -1050,25 +1239,23 @@ class RitualService {
     }
     if (this.freeChatBusy) return { skipped: true, reason: 'busy' };
 
+    const name = this.userName();
     const instruction =
-      `【每日主动话题】现在是 ${config.dailyChatTime || '22:00'}，轮到你主动来找杂鱼。` +
+      `【每日主动话题】现在是 ${config.dailyChatTime || '22:00'}，轮到你主动来找${name}。` +
       '先在心里翻阅你的记忆和收藏室：挑一件最近上贡 / 待补款 / 观望中的周边，或者翻一件旧账，' +
       '以管理员的身份主动说第一句话，把话题抛给他。不要提系统提醒，不要重复最近才聊过的话题，2～4 段以内。';
     try {
-      const message = await this.generateFreeChat({ openingInstruction: instruction, proactive: true });
+      const message = await this.generateFreeChat({ openingInstruction: instruction, proactive: true, threadId });
       if (!message) return { skipped: true, reason: 'empty' };
-      const current = this.store.getFreeChat();
-      current.lastAttemptAt = Date.now();
+      const patch = { lastAttemptAt: Date.now() };
       if (!force) {
-        current.lastProactiveDay = day;
-        current.lastProactiveAt = Date.now();
+        patch.lastProactiveDay = day;
+        patch.lastProactiveAt = Date.now();
       }
-      this.store.putFreeChat(current);
-      return { message };
+      this.store.putFreeChat(patch);
+      return { message, threadId: this.store.getFreeChat().activeId };
     } catch (err) {
-      const current = this.store.getFreeChat();
-      current.lastAttemptAt = Date.now();
-      this.store.putFreeChat(current);
+      this.store.putFreeChat({ lastAttemptAt: Date.now() });
       throw err;
     }
   }
@@ -1125,7 +1312,7 @@ class RitualService {
       const session = sessions.find((s) => s.id === args.session_id);
       if (!session) return { error: '没有这次对话记录' };
       const transcript = (session.messages || [])
-        .map((m) => `${m.role === 'user' ? '杂鱼' : '你'}：${m.content}`)
+        .map((m) => `${m.role === 'user' ? this.userName() : '你'}：${m.content}`)
         .join('\n');
       return {
         sessionId: session.id,
@@ -1171,14 +1358,16 @@ class RitualService {
           name: item.name,
           type: TYPE_LABELS[item.type] || item.type,
           status: item.status,
-          series: item.series,
+          characterId: item.characterId || null,
+          character: (() => { const ch = this.characterFor(item); return ch ? { id: ch.id, name: ch.name, source: ch.source, description: truncate(ch.description, 600) } : null; })(),
           scale: item.scale,
           originalPrice: item.originalPrice,
           purchasePrice: item.purchasePrice,
           deposit: item.deposit,
           balance: item.balance,
           dueDate: item.dueDate,
-          intro: item.intro,
+          detail: item.detail,
+          thought: item.thought,
           photos: (item.photos || []).map((p) => SHOT_LABELS[p.shot] || '照片'),
           createdAt: item.createdAt,
         },
@@ -1203,11 +1392,60 @@ class RitualService {
           name: i.name,
           type: TYPE_LABELS[i.type] || i.type,
           status: i.status,
+          characterId: i.characterId || null,
+          characterName: this.characterFor(i)?.name || null,
           price: i.purchasePrice ?? i.originalPrice ?? null,
           deposit: i.deposit ?? null,
           balance: i.balance ?? null,
           dueDate: i.dueDate || null,
         })),
+      };
+    }
+
+    if (name === 'list_characters') {
+      const characters = this.store.listCharacters();
+      return {
+        total: characters.length,
+        characters: characters.map((c) => ({
+          characterId: c.id,
+          name: c.name,
+          source: c.source,
+          description: truncate(c.description, 400),
+          itemCount: items.filter((i) => i.characterId === c.id).length,
+          items: items.filter((i) => i.characterId === c.id).map((i) => i.name).slice(0, 8),
+        })),
+      };
+    }
+
+    if (name === 'read_character') {
+      const character = this.store.getCharacter(args.character_id);
+      if (!character) return { error: '没有这个角色档案' };
+      const related = items.filter((i) => i.characterId === character.id);
+      const events = sessions
+        .filter((s) => s.archived && related.some((i) => i.id === s.itemId))
+        .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
+        .slice(0, 12)
+        .map((s) => ({
+          sessionId: s.id,
+          date: s.day,
+          phase: PHASE_META[s.phase]?.label || s.phase,
+          itemName: s.itemName,
+          summary: truncate(s.summary, 220),
+        }));
+      return {
+        characterId: character.id,
+        name: character.name,
+        source: character.source,
+        description: character.description,
+        items: related.map((i) => ({
+          id: i.id,
+          name: i.name,
+          type: TYPE_LABELS[i.type] || i.type,
+          status: i.status,
+          detail: truncate(i.detail, 300),
+          thought: truncate(i.thought, 300),
+        })),
+        history: events,
       };
     }
 
@@ -1227,7 +1465,7 @@ class RitualService {
     const apiKey = this.store.getApiKey();
     if (!apiKey) return this.fallbackSummary(session);
     const transcript = (session.messages || [])
-      .map((m) => `${m.role === 'user' ? '杂鱼' : '你'}：${m.content}`)
+      .map((m) => `${m.role === 'user' ? this.userName() : '你'}：${m.content}`)
       .join('\n');
     if (!transcript.trim()) return this.fallbackSummary(session);
     try {

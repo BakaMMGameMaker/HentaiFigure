@@ -1,20 +1,23 @@
-import { useRef, useState, type DragEvent, type ReactNode } from 'react';
-import type { Item, ItemStatus, ItemType, Photo, Shot } from '../types';
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import type { Character, Item, ItemChange, ItemStatus, ItemType, Photo, Shot } from '../types';
 import {
   SHOT_OPTIONS, STATUS_META, TYPE_OPTIONS, formatMoney, photoUrl, shotLabel,
 } from '../constants';
-import { cleanError, cx, toNumberOrNull } from '../utils';
+import { cleanError, cx, describeItemChanges, toNumberOrNull } from '../utils';
 import { Modal, Spinner } from './ui';
 import {
-  IconAlert, IconCamera, IconCheck, IconChevronDown, IconTrash, IconUpload, IconX,
+  IconAlert, IconCamera, IconCheck, IconChevronDown, IconPlus, IconSearch, IconTrash, IconUpload, IconX,
 } from '../icons';
 
 type Props = {
   item?: Item | null;
   draftId: string;
   initialStatus?: ItemStatus;
+  characters: Character[];
+  items: Item[];
+  onCharactersChanged: (characters: Character[]) => void;
   onClose: () => void;
-  onSaved: (item: Item) => void;
+  onSaved: (item: Item, meta: { mode: 'create' | 'update'; changes: ItemChange[] }) => void;
   toast: (text: string, kind?: 'ok' | 'error' | 'info') => void;
 };
 
@@ -22,17 +25,27 @@ type FormState = {
   name: string;
   type: ItemType;
   status: ItemStatus;
-  series: string;
+  characterId: string;
   scale: string;
   originalPrice: string;
   purchasePrice: string;
   deposit: string;
   balance: string;
-  intro: string;
+  detail: string;
+  thought: string;
   dueDate: string;
 };
 
-function Field({ label, hint, children, wide }: { label: string; hint?: string; children: ReactNode; wide?: boolean }) {
+type CharacterForm = {
+  id: string;
+  name: string;
+  source: string;
+  description: string;
+};
+
+const EMPTY_CHARACTER_FORM: CharacterForm = { id: '', name: '', source: '', description: '' };
+
+function Field({ label, hint, children, wide }: { label: string; hint?: ReactNode; children: ReactNode; wide?: boolean }) {
   return (
     <label className={cx('field', wide && 'field-wide')}>
       <span className="field-label">
@@ -44,19 +57,30 @@ function Field({ label, hint, children, wide }: { label: string; hint?: string; 
   );
 }
 
-export function ItemEditor({ item, draftId, initialStatus, onClose, onSaved, toast }: Props) {
+export function ItemEditor({
+  item,
+  draftId,
+  initialStatus,
+  characters,
+  items,
+  onCharactersChanged,
+  onClose,
+  onSaved,
+  toast,
+}: Props) {
   const isNew = !item;
   const [form, setForm] = useState<FormState>({
     name: item?.name || '',
     type: item?.type || 'figure',
     status: item?.status || initialStatus || 'owned',
-    series: item?.series || '',
+    characterId: item?.characterId || '',
     scale: item?.scale || '',
     originalPrice: item?.originalPrice == null ? '' : String(item.originalPrice),
     purchasePrice: item?.purchasePrice == null ? '' : String(item.purchasePrice),
     deposit: item?.deposit == null ? '' : String(item.deposit),
     balance: item?.balance == null ? '' : String(item.balance),
-    intro: item?.intro || '',
+    detail: item?.detail || '',
+    thought: item?.thought || item?.intro || '',
     dueDate: item?.dueDate || '',
   });
   const [photos, setPhotos] = useState<Photo[]>(item?.photos || []);
@@ -64,11 +88,23 @@ export function ItemEditor({ item, draftId, initialStatus, onClose, onSaved, toa
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [localCharacters, setLocalCharacters] = useState<Character[]>(characters || []);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [characterForm, setCharacterForm] = useState<CharacterForm | null>(null);
+  const [characterBusy, setCharacterBusy] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setLocalCharacters(characters || []); }, [characters]);
+  useEffect(() => {
+    if (pickerOpen) searchRef.current?.focus();
+  }, [pickerOpen]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
+  const selectedCharacter = localCharacters.find((c) => c.id === form.characterId) || null;
   const hasFull = photos.some((p) => p.shot === 'full');
   const needsFull = form.status === 'owned' && form.type === 'figure' && !hasFull;
   const tailPreview = (() => {
@@ -77,6 +113,57 @@ export function ItemEditor({ item, draftId, initialStatus, onClose, onSaved, toa
     if (!Number.isFinite(purchase) || !Number.isFinite(deposit) || form.purchasePrice === '' || form.deposit === '') return null;
     return Math.max(0, purchase - deposit);
   })();
+
+  const filteredCharacters = localCharacters.filter((character) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return `${character.name} ${character.source || ''}`.toLowerCase().includes(q);
+  });
+
+  const countFor = (characterId: string) => items.filter((i) => i.characterId === characterId && i.id !== item?.id).length;
+
+  const selectCharacter = (characterId: string) => {
+    set('characterId', characterId);
+    setPickerOpen(false);
+    setQuery('');
+  };
+
+  const openCharacterForm = (character?: Character) => {
+    setCharacterForm(character
+      ? { id: character.id, name: character.name, source: character.source || '', description: character.description || '' }
+      : { ...EMPTY_CHARACTER_FORM });
+    setPickerOpen(false);
+  };
+
+  const submitCharacter = async () => {
+    if (!characterForm) return;
+    if (!characterForm.name.trim()) {
+      setError('角色名不能为空。');
+      return;
+    }
+    setCharacterBusy(true);
+    setError('');
+    try {
+      const saved = await window.hf.characters.save({
+        id: characterForm.id || undefined,
+        name: characterForm.name.trim(),
+        source: characterForm.source.trim(),
+        description: characterForm.description.trim(),
+      });
+      const next = characterForm.id
+        ? localCharacters.map((c) => (c.id === saved.id ? saved : c))
+        : [saved, ...localCharacters];
+      setLocalCharacters(next);
+      onCharactersChanged(next);
+      set('characterId', saved.id);
+      setCharacterForm(null);
+      toast(characterForm.id ? '角色档案已更新。' : '角色档案已建立。', 'ok');
+    } catch (err) {
+      setError(cleanError(err));
+    } finally {
+      setCharacterBusy(false);
+    }
+  };
 
   const groupPhotos = (added: Photo[]) => {
     if (!added.length) return added;
@@ -169,18 +256,20 @@ export function ItemEditor({ item, draftId, initialStatus, onClose, onSaved, toa
         name: form.name.trim(),
         type: form.type,
         status: form.status,
-        series: form.series.trim(),
+        characterId: form.characterId,
         scale: form.scale.trim(),
         originalPrice: toNumberOrNull(form.originalPrice),
         purchasePrice: toNumberOrNull(form.purchasePrice),
         deposit: toNumberOrNull(form.deposit),
         balance: toNumberOrNull(form.balance),
-        intro: form.intro.trim(),
+        detail: form.detail.trim(),
+        thought: form.thought.trim(),
         dueDate: form.dueDate,
         photos,
       });
+      const changes = describeItemChanges(item || null, saved, localCharacters);
       toast(isNew ? '她住进收藏室了。' : '已经重新记好了。', 'ok');
-      onSaved(saved);
+      onSaved(saved, { mode: isNew ? 'create' : 'update', changes });
     } catch (err) {
       setError(cleanError(err));
     } finally {
@@ -251,14 +340,143 @@ export function ItemEditor({ item, draftId, initialStatus, onClose, onSaved, toa
                   </button>
                 ))}
               </div>
+
               <div className="field-row">
-                <Field label="作品 / 角色">
-                  <input className="input" value={form.series} onChange={(e) => set('series', e.target.value)} placeholder="VOCALOID / 初音未来" />
+                <Field label="角色" hint="关联角色档案">
+                  <div className="character-picker">
+                    <button
+                      type="button"
+                      className={cx('character-trigger', pickerOpen && 'open')}
+                      onClick={() => { setPickerOpen((v) => !v); setCharacterForm(null); }}
+                    >
+                      {selectedCharacter ? (
+                        <span className="character-trigger-value">
+                          <span className="character-badge">{selectedCharacter.name.slice(0, 1)}</span>
+                          <span className="character-trigger-text">
+                            <strong>{selectedCharacter.name}</strong>
+                            <small>{selectedCharacter.source || '未填作品'}</small>
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="character-trigger-empty">选择角色，或新增一个</span>
+                      )}
+                      <IconChevronDown size={14} className="character-trigger-arrow" />
+                    </button>
+
+                    {pickerOpen && (
+                      <div className="character-menu">
+                        <div className="character-search">
+                          <IconSearch size={13} />
+                          <input
+                            ref={searchRef}
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="搜索角色或作品"
+                          />
+                        </div>
+                        <div className="character-options">
+                          {filteredCharacters.map((character) => {
+                            const count = countFor(character.id);
+                            return (
+                              <button
+                                key={character.id}
+                                type="button"
+                                className={cx('character-option', form.characterId === character.id && 'active')}
+                                onClick={() => selectCharacter(character.id)}
+                              >
+                                <span className="character-badge">{character.name.slice(0, 1)}</span>
+                                <span className="character-option-text">
+                                  <strong>{character.name}</strong>
+                                  <small>
+                                    {character.source || '未填作品'}
+                                    {count > 0 ? ` · 已有 ${count} 款周边` : ''}
+                                  </small>
+                                </span>
+                                {form.characterId === character.id && <IconCheck size={13} />}
+                              </button>
+                            );
+                          })}
+                          {!filteredCharacters.length && (
+                            <div className="character-empty">没有匹配的角色。</div>
+                          )}
+                        </div>
+                        <button type="button" className="character-add" onClick={() => openCharacterForm()}>
+                          <IconPlus size={13} /> 新增角色
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </Field>
                 <Field label="规格">
                   <input className="input" value={form.scale} onChange={(e) => set('scale', e.target.value)} placeholder="1/7、约 240mm" />
                 </Field>
               </div>
+
+              {selectedCharacter && !characterForm && (
+                <div className="character-summary">
+                  <div className="character-summary-head">
+                    <span className="character-badge large">{selectedCharacter.name.slice(0, 1)}</span>
+                    <div className="character-summary-text">
+                      <strong>{selectedCharacter.name}</strong>
+                      <small>{selectedCharacter.source ? `出自《${selectedCharacter.source}》` : '还没填作品名'}</small>
+                    </div>
+                    <button type="button" className="text-button" onClick={() => openCharacterForm(selectedCharacter)}>
+                      编辑角色
+                    </button>
+                  </div>
+                  <p className={selectedCharacter.description ? 'character-summary-desc' : 'character-summary-desc empty'}>
+                    {selectedCharacter.description || '还没有角色背景。写几句这个角色的设定，管理员对她的印象会更清楚。'}
+                  </p>
+                </div>
+              )}
+
+              {characterForm && (
+                <div className="character-form">
+                  <div className="character-form-title">
+                    {characterForm.id ? '编辑角色档案' : '新增角色档案'}
+                    <button type="button" className="icon-button tiny" onClick={() => setCharacterForm(null)} aria-label="收起">
+                      <IconX size={14} />
+                    </button>
+                  </div>
+                  <Field label="角色名" hint="必填">
+                    <input
+                      className="input"
+                      value={characterForm.name}
+                      onChange={(e) => setCharacterForm({ ...characterForm, name: e.target.value })}
+                      placeholder="初音未来"
+                      maxLength={80}
+                    />
+                  </Field>
+                  <Field label="出自作品">
+                    <input
+                      className="input"
+                      value={characterForm.source}
+                      onChange={(e) => setCharacterForm({ ...characterForm, source: e.target.value })}
+                      placeholder="VOCALOID、原神、赛马娘…"
+                      maxLength={120}
+                    />
+                  </Field>
+                  <Field label="角色背景" hint="管理员会读">
+                    <textarea
+                      className="input textarea"
+                      rows={3}
+                      value={characterForm.description}
+                      onChange={(e) => setCharacterForm({ ...characterForm, description: e.target.value })}
+                      placeholder="她是谁、什么设定、你为什么喜欢她。这段背景会让管理员更懂这款周边。"
+                      maxLength={4000}
+                    />
+                  </Field>
+                  <div className="character-form-actions">
+                    <button type="button" className="btn btn-ghost btn-small" onClick={() => setCharacterForm(null)} disabled={characterBusy}>
+                      取消
+                    </button>
+                    <button type="button" className="btn btn-primary btn-small" onClick={submitCharacter} disabled={characterBusy}>
+                      {characterBusy ? <Spinner size={13} /> : <IconCheck size={14} />}
+                      保存角色
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="form-block">
@@ -309,14 +527,28 @@ export function ItemEditor({ item, draftId, initialStatus, onClose, onSaved, toa
             </div>
 
             <div className="form-block">
-              <div className="block-title">最初的想法</div>
-              <Field label="简介" hint="DeepSeek 会从这里找话题">
+              <div className="block-title">这款周边是什么</div>
+              <Field label="商品详情" hint="管理员会从这里了解它">
                 <textarea
                   className="input textarea"
                   rows={5}
-                  value={form.intro}
-                  onChange={(e) => set('intro', e.target.value)}
-                  placeholder="第一眼看到她时，你在想什么？哪里的细节让你心动？写下来，之后管理员会拿这些话来撩你。"
+                  value={form.detail}
+                  onChange={(e) => set('detail', e.target.value)}
+                  placeholder="商品情报或基本介绍：哪家厂、哪个系列、尺寸材质、什么时间发售、有什么特别设计。让管理员知道这款周边究竟是什么。"
+                  maxLength={8000}
+                />
+              </Field>
+            </div>
+
+            <div className="form-block">
+              <div className="block-title">最初的想法</div>
+              <Field label="你的心路历程" hint="管理员会从这里找话题">
+                <textarea
+                  className="input textarea"
+                  rows={5}
+                  value={form.thought}
+                  onChange={(e) => set('thought', e.target.value)}
+                  placeholder="第一眼看到她时你在想什么？哪里的细节让你心动、为什么非要买下或加进购物车？写下来，之后管理员会拿这些话来撩你。"
                   maxLength={8000}
                 />
               </Field>
@@ -431,5 +663,3 @@ export function ItemEditor({ item, draftId, initialStatus, onClose, onSaved, toa
     </Modal>
   );
 }
-
-

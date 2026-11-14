@@ -23,7 +23,13 @@ contextBridge.exposeInMainWorld('hf', {
     get: () => ipcRenderer.invoke('config:get'),
     save: (patch) => ipcRenderer.invoke('config:save', patch),
     resetPrompt: () => ipcRenderer.invoke('config:resetPrompt'),
+    pickAvatar: () => ipcRenderer.invoke('config:pickAvatar'),
     test: (input) => ipcRenderer.invoke('config:test', input),
+  },
+  characters: {
+    list: () => ipcRenderer.invoke('characters:list'),
+    save: (character) => ipcRenderer.invoke('characters:save', character),
+    remove: (id) => ipcRenderer.invoke('characters:delete', id),
   },
   items: {
     list: () => ipcRenderer.invoke('items:list'),
@@ -55,10 +61,16 @@ contextBridge.exposeInMainWorld('hf', {
     generate: (sessionId) => ipcRenderer.invoke('chat:generate', sessionId),
     stop: (sessionId) => ipcRenderer.invoke('chat:stop', sessionId),
     freeState: () => ipcRenderer.invoke('chat:free:state'),
-    freeSend: (text) => ipcRenderer.invoke('chat:free:send', { text }),
-    freeGenerate: (forceNew) => ipcRenderer.invoke('chat:free:generate', forceNew),
-    freeStop: () => ipcRenderer.invoke('chat:free:stop'),
-    freeProactive: () => ipcRenderer.invoke('chat:free:proactive'),
+    freeSend: (text, threadId) => ipcRenderer.invoke('chat:free:send', { text, threadId }),
+    freeGenerate: (forceNew, threadId) => ipcRenderer.invoke('chat:free:generate', { forceNew, threadId }),
+    freeStop: (threadId) => ipcRenderer.invoke('chat:free:stop', threadId),
+    freeProactive: (threadId) => ipcRenderer.invoke('chat:free:proactive', threadId),
+    freeThreads: () => ipcRenderer.invoke('chat:free:threads'),
+    freeSelect: (threadId) => ipcRenderer.invoke('chat:free:select', threadId),
+    freeNew: (title) => ipcRenderer.invoke('chat:free:new', title),
+    freeRename: (threadId, title) => ipcRenderer.invoke('chat:free:rename', { threadId, title }),
+    freeDelete: (threadId) => ipcRenderer.invoke('chat:free:delete', threadId),
+    itemIntro: (input) => ipcRenderer.invoke('chat:itemIntro', input),
   },
   calendar: {
     month: (year, month) => ipcRenderer.invoke('calendar:month', { year, month }),
@@ -82,4 +94,3 @@ contextBridge.exposeInMainWorld('hf', {
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   onEvent: subscribe,
 });
-

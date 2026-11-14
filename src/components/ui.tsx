@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { photoUrl } from '../constants';
 import type { Photo } from '../types';
@@ -65,6 +65,25 @@ export function EmptyState({
 
 export function Spinner({ size = 18 }: { size?: number }) {
   return <span className="spinner" style={{ width: size, height: size }} />;
+}
+
+/** 管理员头像：设置了自定义头像就显示图片，否则显示「管」字。 */
+export function ManagerAvatar({
+  src,
+  className = '',
+  glyph = '管',
+  style,
+}: {
+  src?: string | null;
+  className?: string;
+  glyph?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <span className={`manager-avatar ${className}`.trim()} style={style}>
+      {src ? <img src={src} alt="管理员头像" /> : <span className="manager-avatar-glyph">{glyph}</span>}
+    </span>
+  );
 }
 
 export function Toast({ text, kind }: { text: string; kind?: 'ok' | 'error' | 'info' }) {

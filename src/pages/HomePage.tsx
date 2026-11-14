@@ -6,8 +6,9 @@ import {
 } from '../constants';
 import {
   IconAlert, IconCamera, IconCheck, IconChevronRight, IconCircleCheck, IconChat, IconClock, IconPlus,
-  IconRefresh, IconSettings, IconSparkles,
+  IconSparkles,
 } from '../icons';
+import { ManagerAvatar } from '../components/ui';
 
 export function HomePage({
   items,
@@ -48,12 +49,13 @@ export function HomePage({
   };
   const complete = todayState?.status === 'complete';
   const inProgress = todayState?.status === 'in_progress' && todayState.exists;
-  const [greeting, setGreeting] = useState(() => pickGreeting(items, complete, counts));
+  const userName = config?.userName || '';
+  const [greeting, setGreeting] = useState(() => pickGreeting(items, complete, counts, userName));
 
   useEffect(() => {
-    setGreeting(pickGreeting(items, complete, counts));
+    setGreeting(pickGreeting(items, complete, counts, userName));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length, complete]);
+  }, [items.length, complete, userName]);
 
   const collage = useMemo(() => {
     return items
@@ -66,7 +68,7 @@ export function HomePage({
   const dateText = `${today.getMonth() + 1}月${today.getDate()}日 · 周${['日', '一', '二', '三', '四', '五', '六'][today.getDay()]}`;
   const spent = totalSpent(items);
   const tail = pendingTail(items);
-  const lastChat = freeChat?.messages?.[freeChat.messages.length - 1];
+  const lastChat = freeChat?.lastMessage || null;
   let unread = false;
   try {
     unread = Boolean(lastChat?.role === 'assistant' && lastChat.ts > Number(localStorage.getItem('hf.freechatReadAt') || 0));
@@ -75,7 +77,7 @@ export function HomePage({
     ? `每天 ${config?.dailyChatTime || '22:00'} 主动来找你`
     : '主动话题已关闭';
 
-  const reroll = () => setGreeting(pickGreeting(items, complete, counts));
+  const reroll = () => setGreeting(pickGreeting(items, complete, counts, userName));
 
   return (
     <div className="page home-page">
@@ -104,13 +106,13 @@ export function HomePage({
 
       <div className="hero">
         <div className="hero-kicker">
-          <span className="hero-kicker-line" />
-          今日份 · 上贡
           <span className="hero-date">{dateText}</span>
         </div>
 
         <div className="hero-greeting-wrap">
-          <h1 className="hero-greeting">{greeting}</h1>
+          <button type="button" className="hero-greeting" onClick={reroll} title="换一句">
+            {greeting}
+          </button>
         </div>
 
         <p className="hero-sub">
@@ -131,10 +133,6 @@ export function HomePage({
             {complete ? <IconCircleCheck size={22} /> : <IconSparkles size={22} />}
             <span>{complete ? '今日已上贡' : inProgress ? '继续上贡' : '今日份上贡'}</span>
             {!complete && <span className="offering-arrow"><IconChevronRight size={18} /></span>}
-          </button>
-          <button className="reroll-button" onClick={reroll} title="换一句问候">
-            <IconRefresh size={15} />
-            换一句
           </button>
         </div>
 
@@ -199,7 +197,7 @@ export function HomePage({
       </div>
 
       <button className={`home-chat-entry ${unread ? 'has-unread' : ''}`} onClick={onOpenChat}>
-        <span className="home-chat-avatar">管</span>
+        <ManagerAvatar src={config?.managerAvatar} className="home-chat-avatar" />
         <span className="home-chat-body">
           <span className="home-chat-title">
             收藏室管理员
@@ -217,15 +215,6 @@ export function HomePage({
           <IconChevronRight size={15} />
         </span>
       </button>
-
-      <div className="home-foot">
-        <span>{appInfo?.name || 'HentaiFigure'} · 私人的收藏室</span>
-        <span className="home-foot-dot" />
-        <span>照片、记忆与 API Key 都只留在这台电脑上</span>
-        <button className="home-settings-link" onClick={onOpenSettings}>
-          <IconSettings size={14} /> 设置
-        </button>
-      </div>
     </div>
   );
 }

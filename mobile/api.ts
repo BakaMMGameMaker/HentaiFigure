@@ -2,14 +2,14 @@ import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
-import type { Config, HfApi, Item, Photo, Shot, UpdateInfo } from '../src/types';
+import type { Character, Config, HfApi, Item, Photo, Shot, UpdateInfo } from '../src/types';
 import { MobileStore } from './store';
 import { MobileEngine } from './engine';
 import { exportSyncZip, importSyncZip } from './sync';
 import { friendlyError, testConnection } from './ai';
 import appConfig from '../app-config.json';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const ALLOWED_STATUS = new Set(['owned', 'pending', 'watching']);
 const ALLOWED_SHOTS = new Set(['promo', 'real', 'full', 'face', 'armpit', 'chest', 'back', 'belly', 'private', 'butt', 'underSkirt', 'thigh', 'feet', 'other']);
 const ALLOWED_TYPES = new Set(['figure', 'acrylic', 'pillow', 'poster', 'badge', 'itabag', 'plush', 'other']);
@@ -74,6 +74,9 @@ function normalizeItem(input: any, store: MobileStore): Item {
   }
   const dueDate = input?.dueDate ? String(input.dueDate) : '';
   if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) throw new Error('补款日期格式应为 YYYY-MM-DD。');
+  let characterId = optionalText(input?.characterId, 80, '关联角色');
+  if (characterId && !store.getCharacter(characterId)) characterId = '';
+  const character = characterId ? store.getCharacter(characterId) : null;
   const now = Date.now();
   const history = Array.isArray((existing as any)?.statusHistory) ? (existing as any).statusHistory.slice() : [];
   if (existing && existing.status !== status) history.push({ from: existing.status, to: status, at: now, via: 'edit' });
@@ -83,13 +86,15 @@ function normalizeItem(input: any, store: MobileStore): Item {
     name,
     type,
     status: status as any,
-    series: optionalText(input?.series, 160, '作品 / 角色'),
+    characterId,
+    series: character ? [character.source, character.name].filter(Boolean).join(' / ') : '',
     scale: optionalText(input?.scale, 80, '规格'),
     originalPrice: optionalNumber(input?.originalPrice, '原始价格'),
     purchasePrice: optionalNumber(input?.purchasePrice, '购入价格'),
     deposit: optionalNumber(input?.deposit, '定金'),
     balance: optionalNumber(input?.balance, '尾款'),
-    intro: optionalText(input?.intro, 8000, '简介'),
+    detail: optionalText(input?.detail, 8000, '商品详情'),
+    thought: optionalText(input?.thought, 8000, '最初的想法'),
     dueDate,
     photos,
     createdAt: existing?.createdAt || now,
@@ -135,6 +140,20 @@ function resizeDataUrl(img: HTMLImageElement, max: number, quality: number): str
   ctx.fillRect(0, 0, w, h);
   ctx.drawImage(img, 0, 0, w, h);
   return canvas.toDataURL('image/jpeg', quality);
+}
+
+function squareAvatarDataUrl(img: HTMLImageElement): string {
+  const side = Math.min(img.naturalWidth || img.width, img.naturalHeight || img.height);
+  const target = Math.min(320, side);
+  const canvas = document.createElement('canvas');
+  canvas.width = target;
+  canvas.height = target;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('无法处理图片');
+  const sx = ((img.naturalWidth || img.width) - side) / 2;
+  const sy = ((img.naturalHeight || img.height) - side) / 2;
+  ctx.drawImage(img, sx, sy, side, side, 0, 0, target, target);
+  return canvas.toDataURL('image/jpeg', 0.86);
 }
 
 async function fileToPhoto(file: File, store: MobileStore): Promise<Photo> {
@@ -360,6 +379,17 @@ export function installMobileApi() {
         }
         if (patch.imageDetail !== undefined) clean.imageDetail = patch.imageDetail === 'low' ? 'low' : 'high';
         if (patch.systemPrompt !== undefined) clean.systemPrompt = String(patch.systemPrompt).slice(0, 30000);
+        if (patch.userName !== undefined) {
+          const userName = String(patch.userName).trim().slice(0, 24);
+          clean.userName = userName || '杂鱼';
+        }
+        if (patch.managerAvatar !== undefined) {
+          const avatar = String(patch.managerAvatar || '');
+          if (avatar && !/^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar)) {
+            throw new Error('头像数据不合法。');
+          }
+          clean.managerAvatar = avatar;
+        }
         if (patch.autoUpdate !== undefined) clean.autoUpdate = Boolean(patch.autoUpdate);
         if (patch.dailyChatEnabled !== undefined) clean.dailyChatEnabled = Boolean(patch.dailyChatEnabled);
         if (patch.dailyChatTime !== undefined) {
@@ -372,6 +402,13 @@ export function installMobileApi() {
         return store.updateConfig(clean);
       },
       resetPrompt: async () => { await ready; return store.resetSystemPrompt(); },
+      pickAvatar: async () => {
+        const files = await pickFiles('image/*', false);
+        if (!files.length) return null;
+        const dataUrl = await readFileAsDataUrl(files[0]);
+        const img = await loadImage(dataUrl);
+        return squareAvatarDataUrl(img);
+      },
       test: async (input: any) => {
         await ready;
         try {
@@ -387,6 +424,11 @@ export function installMobileApi() {
           return { ok: false, message: friendlyError(err) };
         }
       },
+    },
+    characters: {
+      list: async () => { await ready; return store.listCharacters(); },
+      save: async (input: any) => { await ready; return store.upsertCharacter(input || {}); },
+      remove: async (id: string) => { await ready; await store.deleteCharacter(id); return true; },
     },
     items: {
       list: async () => { await ready; return store.listItems(); },
@@ -430,19 +472,26 @@ export function installMobileApi() {
       },
       stop: async (sessionId: string) => { await ready; engine.stop(sessionId); return true; },
       freeState: async () => { await ready; return engine.freeChatState(); },
-      freeSend: async (text: string) => { await ready; return engine.sendFreeChatUserMessage(text); },
-      freeGenerate: async (forceNew?: boolean) => {
+      freeSend: async (text: string, threadId?: string) => { await ready; return engine.sendFreeChatUserMessage(text, threadId); },
+      freeGenerate: async (forceNew?: boolean, threadId?: string) => {
         await ready;
-        if (!forceNew) {
-          const chat = store.getFreeChat();
-          const last = chat.messages[chat.messages.length - 1];
-          if (last?.role === 'assistant') return { started: false };
-        }
-        engine.generateFreeChat({}).catch(() => {});
-        return { started: true };
+        const thread = threadId ? store.getThread(threadId) : store.getActiveThread();
+        const last = thread?.messages?.[thread.messages.length - 1];
+        if (!forceNew && last?.role === 'assistant') return { started: false };
+        engine.generateFreeChat({ threadId: thread?.id }).catch(() => {});
+        return { started: true, threadId: thread?.id };
       },
-      freeStop: async () => { await ready; engine.stopFreeChat(); return true; },
-      freeProactive: async () => { await ready; return engine.maybeProactiveFreeChat(true); },
+      freeStop: async (threadId?: string) => { await ready; engine.stopFreeChat(threadId); return true; },
+      freeProactive: async (threadId?: string) => { await ready; return engine.maybeProactiveFreeChat(true, threadId); },
+      freeThreads: async () => { await ready; return engine.freeThreads(); },
+      freeSelect: async (threadId: string) => { await ready; return engine.freeSelectThread(threadId); },
+      freeNew: async (title?: string) => { await ready; return engine.freeNewThread(title); },
+      freeRename: async (threadId: string, title: string) => { await ready; return engine.freeRenameThread(threadId, title); },
+      freeDelete: async (threadId: string) => { await ready; return engine.freeDeleteThread(threadId); },
+      itemIntro: async (input: { itemId: string; mode: 'create' | 'update'; changes?: any[] }) => {
+        await ready;
+        return engine.itemIntro(input);
+      },
     },
     calendar: {
       month: async (year: number, month: number) => { await ready; return engine.calendar(year, month); },

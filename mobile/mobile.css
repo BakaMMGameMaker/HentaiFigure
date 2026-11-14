@@ -71,15 +71,13 @@ body {
 /* ---------- home ---------- */
 .home-page { padding-top: 10px; justify-content: flex-start; min-height: 100%; }
 .hero { width: 100%; padding-top: 4px; }
-.hero-kicker { font-size: 9.5px; letter-spacing: 0.2em; gap: 8px; }
-.hero-kicker-line { width: 18px; }
-.hero-date { display: none; }
+.hero-kicker { font-size: 10px; letter-spacing: 0.24em; gap: 8px; }
+.hero-date { display: inline; font-size: 10px; }
 .hero-greeting-wrap { padding: 0 2px; margin-top: 18px; }
 .hero-greeting { font-size: clamp(27px, 8.4vw, 38px); line-height: 1.45; max-width: 100%; }
 .hero-sub { margin-top: 12px; font-size: 10.5px; letter-spacing: 0.03em; }
-.hero-actions { margin-top: 22px; flex-direction: column; gap: 10px; width: 100%; }
+.hero-actions { margin-top: 22px; gap: 10px; width: 100%; justify-content: center; }
 .offering-button { width: 100%; max-width: 320px; height: 54px; font-size: 14.5px; padding: 0 22px; justify-content: center; }
-.reroll-button { font-size: 10.5px; }
 .today-link { margin-top: 12px; font-size: 10.5px; }
 .home-stats { grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 26px; width: 100%; }
 .stat-card { padding: 11px 11px; gap: 9px; }
@@ -94,9 +92,6 @@ body {
 .home-chat-side .home-chat-schedule { display: none; }
 .home-chat-side > svg { display: none; }
 .home-chat-badge { font-size: 8px; padding: 1px 6px; }
-.home-foot { margin-top: 22px; font-size: 9px; flex-wrap: wrap; justify-content: center; gap: 6px; }
-.home-foot span:nth-child(3) { display: none; }
-.home-settings-link { display: none; }
 .setup-hint { font-size: 10.5px; padding: 8px 12px; margin-top: 14px; text-align: left; }
 .hero-empty { font-size: 11px; margin-top: 16px; }
 .hero-progress { margin-top: 16px; gap: 5px; }
@@ -319,3 +314,16 @@ body {
 .settings { height: 100%; min-height: 0; }
 .settings-main { min-height: 0; }
 .settings-body { min-height: 0; flex: 1; overflow-y: auto; }
+
+/* ---------- v1.2 additions ---------- */
+.freechat-head-actions { flex-wrap: wrap; }
+.freechat-head-actions .thread-drawer-trigger { display: inline-flex; }
+.character-trigger { height: 42px; }
+.character-options { max-height: 168px; }
+.thread-list { max-height: 40vh; }
+.thread-drawer .thread-list { max-height: none; }
+.manager-profile-avatar-actions .btn { height: 30px; padding: 0 12px; font-size: 11px; }
+.chat-item-banner { margin: 8px 10px 0; }
+.detail-character { margin-top: 12px; }
+.home-collage { display: none; }
+.thread-drawer .thread-list-wrap { gap: 6px; }

@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, Config, UpdateInfo } from '../types';
-import { Modal, Spinner } from './ui';
+import { Modal, ManagerAvatar, Spinner } from './ui';
 import {
   IconAlert, IconCheck, IconCircleCheck, IconClock, IconDownload, IconFolder, IconInfo, IconChat,
-  IconRefresh, IconSettings, IconSparkles, IconWallet, IconX,
+  IconRefresh, IconSettings, IconSparkles, IconUpload, IconWallet, IconX,
 } from '../icons';
 import { cleanError } from '../utils';
 import appConfig from '../../app-config.json';
@@ -43,11 +43,14 @@ export function SettingsModal({
     maxPhotosPerRequest: config.maxPhotosPerRequest,
     imageDetail: config.imageDetail,
     systemPrompt: config.systemPrompt,
+    userName: config.userName || '杂鱼',
     autoUpdate: config.autoUpdate,
     dailyChatEnabled: config.dailyChatEnabled !== false,
     dailyChatTime: config.dailyChatTime || '22:00',
   });
   const [apiKey, setApiKey] = useState('');
+  const [avatar, setAvatar] = useState(config.managerAvatar || '');
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const [clearKey, setClearKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -84,6 +87,8 @@ export function SettingsModal({
         ...form,
         baseUrl: form.baseUrl.trim(),
         model: form.model.trim(),
+        userName: form.userName.trim() || '杂鱼',
+        managerAvatar: avatar,
       };
       if (clearKey) patch.clearApiKey = true;
       else if (apiKey.trim()) patch.apiKey = apiKey.trim();
@@ -144,6 +149,19 @@ export function SettingsModal({
       toast('人格设定已恢复默认。', 'ok');
     } catch (e) {
       toast(cleanError(e), 'error');
+    }
+  };
+
+  const pickAvatar = async () => {
+    setAvatarBusy(true);
+    setErr('');
+    try {
+      const dataUrl = await window.hf.config.pickAvatar();
+      if (dataUrl) setAvatar(dataUrl);
+    } catch (e) {
+      setErr(cleanError(e));
+    } finally {
+      setAvatarBusy(false);
     }
   };
 
@@ -244,7 +262,7 @@ export function SettingsModal({
             </button>
           ))}
           <div className="settings-nav-foot">
-            <span>v{appInfo?.version || '1.1.0'}</span>
+            <span>v{appInfo?.version || '1.2.0'}</span>
             <span className="settings-nav-dot" />
             <span>本地运行</span>
           </div>
@@ -305,7 +323,7 @@ export function SettingsModal({
                     </label>
                   </div>
                   <p className="muted small">
-                    默认 <code>deepseek-flash</code>，支持看图。换用纯文本模型时，管理员只会根据照片标签和简介说话。
+                    默认 <code>deepseek-flash</code>，支持看图。换用纯文本模型时，管理员只会根据照片标签和商品详情说话。
                   </p>
 
                   <div className="test-row">
@@ -367,6 +385,43 @@ export function SettingsModal({
 
             {tab === 'persona' && (
               <>
+              <div className="settings-section">
+                <div className="block-title">她怎么称呼你</div>
+                <div className="manager-profile">
+                  <div className="manager-profile-avatar">
+                    <ManagerAvatar src={avatar} className="settings-avatar" />
+                    <div className="manager-profile-avatar-actions">
+                      <button className="btn btn-ghost btn-small" onClick={() => void pickAvatar()} disabled={avatarBusy}>
+                        {avatarBusy ? <Spinner size={13} /> : <IconUpload size={14} />}
+                        {avatar ? '换头像' : '上传头像'}
+                      </button>
+                      {avatar && (
+                        <button className="text-button danger" onClick={() => setAvatar('')}>移除</button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="manager-profile-fields">
+                    <label className="field">
+                      <span className="field-label">
+                        你的昵称
+                        <em>管理员会这样叫你</em>
+                      </span>
+                      <input
+                        className="input"
+                        value={form.userName}
+                        onChange={(e) => set('userName', e.target.value)}
+                        placeholder="杂鱼"
+                        maxLength={24}
+                      />
+                      <p className="muted small">问候语、聊天里的称呼、记忆摘要都会用这个名字。</p>
+                    </label>
+                    <p className="muted small">
+                      头像只保存在本地，会出现在首页、对话页和她说话的每一处。不传的话就是那个「管」字。
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="settings-section">
                 <div className="block-title">系统提示词</div>
                 <p className="muted small">
@@ -438,12 +493,12 @@ export function SettingsModal({
                     <div className="update-version">
                       <div>
                         <span className="muted small">当前版本</span>
-                        <strong>v{info?.currentVersion || appInfo?.version || '1.1.0'}</strong>
+                        <strong>v{info?.currentVersion || appInfo?.version || '1.2.0'}</strong>
                       </div>
                       <span className={`update-arrow ${info?.available ? 'has' : ''}`}>→</span>
                       <div>
                         <span className="muted small">最新版本</span>
-                        <strong>v{info?.latestVersion || info?.currentVersion || appInfo?.version || '1.1.0'}</strong>
+                        <strong>v{info?.latestVersion || info?.currentVersion || appInfo?.version || '1.2.0'}</strong>
                       </div>
                       <span className={`update-badge ${info?.available ? 'available' : info?.error ? 'error' : info?.configured ? 'ok' : ''}`}>
                         {info?.available ? '有新版本' : info?.error ? '检查失败' : info?.configured ? '已是最新' : '点击检查'}
@@ -571,7 +626,7 @@ export function SettingsModal({
                 </div>
                 <div className="settings-section">
                   <div className="about-rows">
-                    <div><span>版本</span><b>v{appInfo?.version || '1.1.0'}</b></div>
+                    <div><span>版本</span><b>v{appInfo?.version || '1.2.0'}</b></div>
                     <div><span>Electron</span><b>{appInfo?.versions.electron || '—'}</b></div>
                     <div><span>Chrome</span><b>{appInfo?.versions.chrome || '—'}</b></div>
                     <div><span>Node</span><b>{appInfo?.versions.node || '—'}</b></div>
@@ -584,6 +639,22 @@ export function SettingsModal({
                     <button className="text-button" onClick={() => window.hf.openExternal('https://api-docs.deepseek.com/')}>DeepSeek API 文档</button>
                     <button className="text-button" onClick={() => window.hf.openExternal('https://github.com/deepseek-ai/chat-demo')}>参考的 chat-demo 项目</button>
                   </div>
+                </div>
+                <div className="settings-section about-foot">
+                  <div className="about-foot-line">
+                    <span>{appInfo?.name || 'HentaiFigure'} · 私人的收藏室</span>
+                    <span className="home-foot-dot" />
+                    <span>
+                      {appInfo?.platform === 'android'
+                        ? '照片、记忆与 API Key 都只留在这台手机上'
+                        : '照片、记忆与 API Key 都只留在这台电脑上'}
+                    </span>
+                  </div>
+                  <p className="muted small">
+                    {appInfo?.platform === 'android'
+                      ? '数据保存在应用自己的本地存储里，不会上传到除你配置的 API 之外的任何地方。'
+                      : '数据保存在上面的数据目录里，不会上传到除你配置的 API 之外的任何地方。'}
+                  </p>
                 </div>
               </>
             )}

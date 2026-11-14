@@ -1,5 +1,5 @@
 import { unzipSync, zipSync } from 'fflate';
-import type { Item, Session } from '../src/types';
+import type { Character, Item, Session } from '../src/types';
 import type { MobileStore } from './store';
 
 function mimeFor(path: string): string {
@@ -96,12 +96,13 @@ export async function exportSyncZip(store: MobileStore): Promise<Uint8Array> {
   });
 
   files['items.json'] = encodeJson(exportedItems);
+  files['characters.json'] = encodeJson(data.characters || []);
   files['daily.json'] = encodeJson(data.daily);
   files['sessions.json'] = encodeJson(data.sessions);
   files['freechat.json'] = encodeJson(data.freechat);
   files['README-sync.txt'] = new TextEncoder().encode(
     'HentaiFigure sync package.\n' +
-    'This archive contains items/sessions/daily/freechat JSON and images. ' +
+    'This archive contains items/characters/sessions/daily/freechat JSON and images. ' +
     'It does not contain your API key. Import it from the other device\'s Settings -> Data.\n'
   );
   return zipSync(files, { level: 6 });
@@ -112,6 +113,7 @@ export async function importSyncZip(store: MobileStore, bytes: Uint8Array): Prom
   const entries: Record<string, Uint8Array> = {};
   for (const [key, value] of Object.entries(rawEntries)) entries[key.replace(/\\\\/g, '/')] = value as Uint8Array;
   const importedItems = decodeJson<Item[]>(entries['items.json'], []);
+  const importedCharacters = decodeJson<Character[]>(entries['characters.json'], []);
   const importedDaily = decodeJson<Record<string, any>>(entries['daily.json'], {});
   const importedSessions = decodeJson<Record<string, Session>>(entries['sessions.json'], {});
   const importedFreechat = decodeJson<Record<string, any>>(entries['freechat.json'], {});
@@ -164,6 +166,26 @@ export async function importSyncZip(store: MobileStore, bytes: Uint8Array): Prom
     sessionMap.set(id, merged);
   }
 
+  // Merge characters by id, preferring the newer updatedAt.
+  const characterMap = new Map<string, Character>((local.characters || []).map((c) => [c.id, c]));
+  for (const character of importedCharacters) {
+    if (!character?.id) continue;
+    const existing = characterMap.get(character.id);
+    if (!existing || (character.updatedAt || 0) > (existing.updatedAt || 0)) characterMap.set(character.id, character);
+  }
+  // 老数据只有 items[].series，补一份角色档案，避免关联丢失。
+  for (const item of itemMap.values()) {
+    if (item.characterId || !item.series) continue;
+    const name = String(item.series).trim();
+    if (!name) continue;
+    let character = Array.from(characterMap.values()).find((c) => c.name === name);
+    if (!character) {
+      character = { id: `chr_${Math.random().toString(36).slice(2, 12)}`, name, source: '', description: '', createdAt: Date.now(), updatedAt: Date.now() };
+      characterMap.set(character.id, character);
+    }
+    item.characterId = character.id;
+  }
+
   // Merge daily records: prefer completed, otherwise the newer one.
   const dailyMap: Record<string, any> = { ...local.daily };
   for (const [day, incoming] of Object.entries(importedDaily)) {
@@ -179,30 +201,51 @@ export async function importSyncZip(store: MobileStore, bytes: Uint8Array): Prom
     else if (incDone && curDone && (incoming.completedAt || 0) > (current.completedAt || 0)) dailyMap[day] = incoming;
   }
 
-  // Merge free chat messages by id.
-  const localChat = local.freechat;
-  const incomingChat = importedFreechat as any;
-  const chatMessages = new Map<string, any>();
-  for (const m of localChat.messages || []) chatMessages.set(m.id, m);
-  for (const m of incomingChat.messages || []) if (!chatMessages.has(m.id)) chatMessages.set(m.id, m);
-  const mergedChat = {
-    ...localChat,
-    ...incomingChat,
-    messages: Array.from(chatMessages.values()).sort((a, b) => (a.ts || 0) - (b.ts || 0)),
-  };
-  mergedChat.lastProactiveAt = Math.max(localChat.lastProactiveAt || 0, incomingChat.lastProactiveAt || 0) || null;
+  // Merge daily chat threads by id, merging messages by id inside each thread.
+  const localChat: any = local.freechat;
+  const incomingChat: any = importedFreechat && typeof importedFreechat === 'object' ? importedFreechat : {};
+  const threadMap = new Map<string, any>(Object.entries(localChat.threads || {}));
+  for (const [id, raw] of Object.entries(incomingChat.threads || {})) {
+    const incoming = raw as any;
+    const current = threadMap.get(id);
+    if (!current) {
+      threadMap.set(id, incoming);
+      continue;
+    }
+    const msgs = new Map<string, any>();
+    for (const m of current.messages || []) msgs.set(m.id, m);
+    for (const m of incoming.messages || []) if (!msgs.has(m.id)) msgs.set(m.id, m);
+    threadMap.set(id, {
+      ...current,
+      ...incoming,
+      messages: Array.from(msgs.values()).sort((a, b) => (a.ts || 0) - (b.ts || 0)),
+      createdAt: Math.min(current.createdAt || 0, incoming.createdAt || 0) || Date.now(),
+      updatedAt: Math.max(current.updatedAt || 0, incoming.updatedAt || 0),
+    });
+  }
+  let messageCount = 0;
+  for (const thread of threadMap.values()) messageCount += (thread.messages || []).length;
 
   await store.importData({
     items: Array.from(itemMap.values()),
+    characters: Array.from(characterMap.values()),
     daily: dailyMap,
     sessions: Object.fromEntries(sessionMap),
-    freechat: mergedChat,
+    freechat: {
+      threads: Object.fromEntries(threadMap),
+      activeId: localChat.activeId || incomingChat.activeId || '',
+      lastProactiveDay: localChat.lastProactiveDay || incomingChat.lastProactiveDay || null,
+      lastProactiveAt: Math.max(localChat.lastProactiveAt || 0, incomingChat.lastProactiveAt || 0) || null,
+      lastAttemptAt: Math.max(localChat.lastAttemptAt || 0, incomingChat.lastAttemptAt || 0) || null,
+      createdAt: Math.min(localChat.createdAt || 0, incomingChat.createdAt || 0) || 0,
+      updatedAt: Date.now(),
+    },
   });
 
   return {
     items: importedItems.length,
     sessions: Object.keys(importedSessions).length,
-    freechat: Array.isArray(incomingChat.messages) ? incomingChat.messages.length : 0,
+    freechat: messageCount,
   };
 }
 
