@@ -402,6 +402,9 @@ export function installMobileApi() {
         return store.updateConfig(clean);
       },
       resetPrompt: async () => { await ready; return store.resetSystemPrompt(); },
+      prompts: async () => { await ready; return store.getPrompts(); },
+      savePrompts: async (patch: any) => { await ready; return store.savePrompts(patch || {}); },
+      setDevPromptMode: async (value: boolean) => { await ready; return store.setDevPromptMode(Boolean(value)); },
       pickAvatar: async () => {
         const files = await pickFiles('image/*', false);
         if (!files.length) return null;

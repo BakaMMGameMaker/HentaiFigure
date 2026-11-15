@@ -107,6 +107,20 @@ export interface RitualState {
   completedAt?: number | null;
 }
 
+export interface PromptBundle {
+  /** 系统默认值（electron/prompts.default.json） */
+  defaults: Record<string, string>;
+  /** 用户层覆盖：只有改过、且和默认值不同的键 */
+  overrides: Record<string, string>;
+  /** 当前生效的完整集合 */
+  resolved: Record<string, string>;
+  /** 开发人员模式：保存时写回系统默认文件 */
+  devPromptMode: boolean;
+  /** 当前运行方式是否可以写默认文件（打包后为 false） */
+  defaultsEditable: boolean;
+  defaultsPath: string;
+}
+
 export interface Config {
   baseUrl: string;
   model: string;
@@ -119,6 +133,7 @@ export interface Config {
   autoUpdate: boolean;
   dailyChatEnabled: boolean;
   dailyChatTime: string;
+  prompts: PromptBundle;
   apiKeySet: boolean;
   apiKeyPreview: string;
   apiKeyStoredEncrypted: boolean;
@@ -253,6 +268,9 @@ export interface HfApi {
     get(): Promise<Config>;
     save(patch: Record<string, unknown>): Promise<Config>;
     resetPrompt(): Promise<Config>;
+    prompts(): Promise<PromptBundle>;
+    savePrompts(patch: { prompts?: Record<string, string>; reset?: string[] }): Promise<Config>;
+    setDevPromptMode(value: boolean): Promise<Config>;
     pickAvatar(): Promise<string | null>;
     test(input: { apiKey?: string; baseUrl?: string; model?: string }): Promise<{ ok: boolean; reply?: string; model?: string; message?: string }>;
   };

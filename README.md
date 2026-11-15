@@ -16,7 +16,7 @@ HentaiFigure 是一个**完全本地运行**的收藏管理应用（Windows 桌�
 2. 第一次启动会自动安装依赖并构建界面，可能需要一两分钟；之后每次启动只需几秒。
 3. 出现窗口后，点右上角的 **设置**，填入 DeepSeek API Key。
 
-已经打包好的免安装便携版在 **`release\HentaiFigure-1.2.0-portable.exe`**，双击也能直接打开（不需要 Node.js）。数据同样在 `%APPDATA%\HentaiFigure`。不过便携版不支持应用内自动更新；想用自动更新就双击 `启动.bat` 的源码方式运行。
+已经打包好的免安装便携版在 **`release\HentaiFigure-1.3.0-portable.exe`**，双击也能直接打开（不需要 Node.js）。数据同样在 `%APPDATA%\HentaiFigure`。不过便携版不支持应用内自动更新；想用自动更新就双击 `启动.bat` 的源码方式运行。
 
 想把快捷方式放到桌面，双击 **`创建桌面快捷方式.bat`**。
 
@@ -105,6 +105,21 @@ HentaiFigure 是一个**完全本地运行**的收藏管理应用（Windows 桌�
 - 主动消息会弹系统通知；点通知直接打开对话。手机上则是在应用打开/切回前台时检查。
 - **管理员头像和昵称**：在「设置 → 管理员」里可以上传管理员头像、设置她怎么称呼你（默认「杂鱼」）。头像会出现在首页、对话页和上贡界面。
 
+### 6. 进阶设置：改所有提示词
+
+「设置 → 管理员 → 进阶设置」（或左侧导航的 **进阶**）里，可以改掉应用真正发出去的每一条指令，除了 API 连接测试：
+
+- **人格底色**：她是怎样的人、怎么说话。
+- **上贡流程**：擦拭 / 意淫 / 教唆三个阶段各自的规则、日期与场景、工具权限、输出要求、本轮开场白、照片说明。
+- **日常聊天 / 主动话题**：日常对话的场景和区块标题、藏品话题开场、日常开场、新藏品入库和资料更新的开场、每日主动话题。
+- **记忆整理**：每次上贡结束后写记忆摘要用的那条指令（包括 140 字上限）。
+
+每条都标了可用的变量（`{name}`、`{item}`、`{date}`、`{context}`、`{digest}` 等），没用到的花括号会原样保留。改完点「保存提示词」才生效，每条都能单独「恢复默认」，也能一键全部恢复。
+
+「开发人员选项」是给改默认值用的：打开后，保存提示词不再写用户层，而是**直接改写系统默认**（`electron/prompts.default.json`），下一次发版 / 新安装就会带上你改的版本。打包后的便携版和手机版不能写这个文件，所以只能关掉它、回普通模式；源码方式运行（`启动.bat` / `npm run dev`）才能用。
+
+> 默认提示词都在 `electron/prompts.default.json` 里，代码只负责读取和拼装，不再写死任何一条指令。
+
 ---
 
 ## 数据、备份与隐私
@@ -113,7 +128,7 @@ HentaiFigure 是一个**完全本地运行**的收藏管理应用（Windows 桌�
 
 ```text
 %APPDATA%\HentaiFigure\data\
-├─ config.json       # 设置（含昵称、管理员头像）；API Key 加密保存
+├─ config.json       # 设置（含昵称、管理员头像、提示词覆盖层）；API Key 加密保存
 ├─ items.json        # 收藏与照片元数据（含商品详情 / 最初的想法）
 ├─ characters.json   # 角色档案：角色名、作品、背景，可被多款周边共用
 ├─ sessions.json     # 每轮对话与记忆摘要
@@ -159,7 +174,7 @@ HentaiFigure 是一个**完全本地运行**的收藏管理应用（Windows 桌�
 已经构建好的 APK 在：
 
 ```text
-release\HentaiFigure-1.1.0-android.apk
+release\HentaiFigure-1.3.0-android.apk
 ```
 
 （源码构建产物在 `android/app/build/outputs/apk/debug/app-debug.apk`。）
@@ -196,7 +211,7 @@ npm run android:apk
 
 「设置 → 更新」会显示写死的官方仓库地址。打开「启动时自动检查」后，手机会读取 GitHub Release（或 master 分支的 `package.json`）判断是否有新版本。
 
-手机版不能应用内替换 APK；发现新版本后会给出发布页入口，下载新 APK 覆盖安装即可。收藏和记忆在应用数据里，覆盖安装不会丢。实际上，`version` 要大于当前 `1.1.0` 才会提示。
+手机版不能应用内替换 APK；发现新版本后会给出发布页入口，下载新 APK 覆盖安装即可。收藏和记忆在应用数据里，覆盖安装不会丢。实际上，`version` 要大于当前 `1.3.0` 才会提示。
 
 ### 手机版限制
 
@@ -217,6 +232,7 @@ npm run build         :: 只构建 Windows 渲染层
 npm run build:mobile  :: 构建手机 Web 资源（mobile-dist/）
 npm run android:sync  :: 构建手机资源并同步到 Android 工程
 npm run android:apk   :: 构建 debug APK
+npm run check:prompts :: 校验提示词注册表 / 用户覆盖层 / 开发人员模式
 npm run pack          :: 打包 Windows 便携版（release/）
 ```
 
@@ -226,7 +242,9 @@ npm run pack          :: 打包 Windows 便携版（release/）
 electron/
   main.cjs            主进程：窗口、IPC、图片协议、备份、更新
   preload.cjs         安全桥接
-  lib/store.cjs       JSON 持久化、API Key 加密
+  prompts.default.json 系统默认提示词（唯一一份，不在代码里写死）
+  lib/store.cjs       JSON 持久化、API Key 加密、提示词用户层
+  lib/prompts.cjs     提示词读取、变量渲染、默认值写回
   lib/deepseek.cjs    SSE 流式调用、图片压缩、错误映射
   lib/ritual.cjs      上贡状态机、记忆、工具、阶段摘要
   lib/updater.cjs     git / GitHub zip 更新
@@ -234,6 +252,7 @@ src/
   App.tsx             页面与状态
   pages/              首页、收藏、上贡、日历、对话、记忆
   components/         编辑器、设置、详情、对话弹窗
+  prompts.ts          提示词键名 / 分组 / 变量说明（设置页用）
   styles.css          桌面视觉样式
 mobile/
   main.tsx            手机入口
@@ -246,6 +265,7 @@ android/              Capacitor 生成的 Android 工程
 scripts/
   dev.cjs             开发启动器
   ensure-electron.cjs 修复 Electron 运行时
+  check-prompts.cjs   提示词冒烟测试
   启动.bat / 更新.bat / 创建桌面快捷方式.bat
 ```
 
@@ -284,7 +304,7 @@ scripts/
 同步时手机和电脑都要选择完整 ZIP。电脑导出时不要把 `images/` 单独拆出去；手机导入后应用会自动刷新。若只同步了 JSON，照片会缺。
 
 **手机版检查更新显示已是最新，但 GitHub 有新版本**
-手机端比较的是应用版本号（当前 `1.2.0`）和 Release/tag；发布时记得把 `package.json` 的 `version` 改大，并打上对应的 tag。
+手机端比较的是应用版本号（当前 `1.3.0`）和 Release/tag；发布时记得把 `package.json` 的 `version` 改大，并打上对应的 tag。
 
 **手机版没有在后台主动发消息**
 这是设计如此：Android 后台定时不可靠，手机版只在应用打开或切回前台时补检查一次。
@@ -303,6 +323,15 @@ HentaiFigure 是个人使用的虚构角色周边收藏管理工具。生成内�
 ---
 
 ## 更新日志
+
+### v1.3.0
+
+- **提示词全部可配置**：人格底色、上贡三个阶段规则、日期与场景、工具权限、输出要求、本轮开场白、照片说明、日常聊天、藏品话题开场、每日主动话题、记忆整理指令，全部从代码里搬进 `electron/prompts.default.json`，代码只负责读取和拼装，不再写死任何一条指令。
+- 「设置 → 管理员」新增 **进阶设置**：按四组编辑上面每一条，标注可用变量，支持单条「恢复默认」和一键全部恢复；改完点保存才生效，没保存的改动会提示。
+- 新增 **开发人员选项**：开启后保存提示词直接改写系统默认文件（`electron/prompts.default.json`），不写用户层；打包版和手机版里这个文件只读，开关会自动禁用。
+- 默认人格换成你调好的那一版；老配置里自定义的人格会自动迁移成用户层覆盖，不会被覆盖掉。
+- 手机版也读同一份默认值，进阶设置里同样能改（写系统默认在手机上是只读的）。
+- 修掉一个隐藏问题：手机端和电脑端原来各自抄了一份阶段规则和开场白，措辞已经不一致；现在共用同一份模板。
 
 ### v1.2.0
 

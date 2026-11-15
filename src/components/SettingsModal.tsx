@@ -1,18 +1,20 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { AppInfo, Config, UpdateInfo } from '../types';
+import type { AppInfo, Config, PromptBundle, UpdateInfo } from '../types';
+import { PROMPT_SCHEMA } from '../prompts';
 import { Modal, ManagerAvatar, Spinner } from './ui';
 import {
   IconAlert, IconCheck, IconCircleCheck, IconClock, IconDownload, IconFolder, IconInfo, IconChat,
-  IconRefresh, IconSettings, IconSparkles, IconUpload, IconWallet, IconX,
+  IconRefresh, IconSettings, IconSparkles, IconStack, IconUpload, IconWallet, IconX,
 } from '../icons';
 import { cleanError } from '../utils';
 import appConfig from '../../app-config.json';
 
-type Tab = 'api' | 'persona' | 'update' | 'data' | 'about';
+type Tab = 'api' | 'persona' | 'prompts' | 'update' | 'data' | 'about';
 
 const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
   { id: 'api', label: 'API', icon: <IconSettings size={17} /> },
   { id: 'persona', label: '管理员', icon: <IconSparkles size={17} /> },
+  { id: 'prompts', label: '进阶', icon: <IconStack size={17} /> },
   { id: 'update', label: '更新', icon: <IconRefresh size={17} /> },
   { id: 'data', label: '数据', icon: <IconFolder size={17} /> },
   { id: 'about', label: '关于', icon: <IconInfo size={17} /> },
@@ -62,8 +64,24 @@ export function SettingsModal({
   const [updateMessage, setUpdateMessage] = useState('');
   const [dataBusy, setDataBusy] = useState('');
   const [err, setErr] = useState('');
+  const [promptBundle, setPromptBundle] = useState<PromptBundle | null>(config.prompts || null);
+  const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>(config.prompts?.resolved || {});
+  const [promptBusy, setPromptBusy] = useState(false);
+  const [devBusy, setDevBusy] = useState(false);
 
   useEffect(() => setInfo(updateInfo), [updateInfo]);
+
+  useEffect(() => {
+    let alive = true;
+    window.hf.config.prompts()
+      .then((bundle) => {
+        if (!alive) return;
+        setPromptBundle(bundle);
+        setPromptDrafts(bundle.resolved);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     const off = window.hf.onEvent((event) => {
@@ -145,10 +163,95 @@ export function SettingsModal({
     try {
       const saved = await window.hf.config.resetPrompt();
       setForm((prev) => ({ ...prev, systemPrompt: saved.systemPrompt }));
+      setPromptBundle(saved.prompts);
+      setPromptDrafts(saved.prompts.resolved);
       onSaved(saved);
       toast('人格设定已恢复默认。', 'ok');
     } catch (e) {
       toast(cleanError(e), 'error');
+    }
+  };
+
+  const applyPromptConfig = (saved: Config) => {
+    onSaved(saved);
+    setPromptBundle(saved.prompts);
+    setPromptDrafts(saved.prompts.resolved);
+  };
+
+  const dirtyPromptKeys = Object.keys(promptDrafts).filter((key) => {
+    const base = promptBundle?.resolved[key] ?? '';
+    return promptDrafts[key] !== base;
+  });
+
+  const savePrompts = async () => {
+    if (!dirtyPromptKeys.length) {
+      toast('提示词没有改动。', 'info');
+      return;
+    }
+    const patch: Record<string, string> = {};
+    for (const key of dirtyPromptKeys) patch[key] = promptDrafts[key];
+    setPromptBusy(true);
+    setErr('');
+    try {
+      const saved = await window.hf.config.savePrompts({ prompts: patch });
+      applyPromptConfig(saved);
+      toast(promptBundle?.devPromptMode ? '已写入系统默认提示词。' : '提示词已保存。', 'ok');
+    } catch (e) {
+      toast(cleanError(e), 'error');
+    } finally {
+      setPromptBusy(false);
+    }
+  };
+
+  const resetPromptKey = async (key: string) => {
+    setPromptBusy(true);
+    setErr('');
+    try {
+      const saved = await window.hf.config.savePrompts({ reset: [key] });
+      applyPromptConfig(saved);
+      toast('已恢复默认。', 'ok');
+    } catch (e) {
+      toast(cleanError(e), 'error');
+    } finally {
+      setPromptBusy(false);
+    }
+  };
+
+  const resetAllPrompts = async () => {
+    const keys = Object.keys(promptBundle?.defaults || {});
+    if (!keys.length) return;
+    if (!window.confirm('把全部提示词恢复成默认值？你改过的内容会丢失。')) return;
+    setPromptBusy(true);
+    setErr('');
+    try {
+      const saved = await window.hf.config.savePrompts({ reset: keys });
+      applyPromptConfig(saved);
+      toast('全部提示词已恢复默认。', 'ok');
+    } catch (e) {
+      toast(cleanError(e), 'error');
+    } finally {
+      setPromptBusy(false);
+    }
+  };
+
+  const toggleDevPromptMode = async () => {
+    if (!promptBundle) return;
+    const next = !promptBundle.devPromptMode;
+    if (next && !promptBundle.defaultsEditable) {
+      toast('当前版本不能写入系统默认提示词。请在源码目录里运行开发模式。', 'error');
+      return;
+    }
+    if (next && !window.confirm('开发人员选项：保存提示词时会直接改写系统默认值，不再写用户层。确定打开吗？')) return;
+    setDevBusy(true);
+    setErr('');
+    try {
+      const saved = await window.hf.config.setDevPromptMode(next);
+      applyPromptConfig(saved);
+      toast(next ? '开发人员选项已开启。' : '已回到普通模式。', 'ok');
+    } catch (e) {
+      toast(cleanError(e), 'error');
+    } finally {
+      setDevBusy(false);
     }
   };
 
@@ -275,6 +378,7 @@ export function SettingsModal({
               <h2>
                 {tab === 'api' && '连接 DeepSeek'}
                 {tab === 'persona' && '管理员的性格'}
+                {tab === 'prompts' && '进阶设置'}
                 {tab === 'update' && '检查更新'}
                 {tab === 'data' && '数据与备份'}
                 {tab === 'about' && '关于 HentaiFigure'}
@@ -426,6 +530,7 @@ export function SettingsModal({
                 <div className="block-title">系统提示词</div>
                 <p className="muted small">
                   这是管理员每一次开口前的底色。阶段规则、周边资料和旧记忆会由应用自动接在后面，不需要写在这里。
+                  想改上贡流程、日常开场、记忆整理这些部分，进「进阶设置」。
                 </p>
                 <textarea
                   className="input textarea prompt-textarea"
@@ -435,7 +540,12 @@ export function SettingsModal({
                 />
                 <div className="prompt-actions">
                   <button className="btn btn-ghost" onClick={resetPrompt}>恢复默认人格</button>
-                  <span className="muted small">越具体，她越像你的管理员。</span>
+                  <div className="prompt-actions-right">
+                    <span className="muted small">越具体，她越像你的管理员。</span>
+                    <button className="btn btn-soft" onClick={() => setTab('prompts')}>
+                      <IconStack size={15} /> 进阶设置
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -483,6 +593,108 @@ export function SettingsModal({
                   <IconClock size={13} /> 主动话题也会显示系统通知。点通知会直接打开对话。
                 </p>
               </div>
+              </>
+            )}
+
+            {tab === 'prompts' && (
+              <>
+                <div className="settings-section">
+                  <div className="block-title">提示词总览</div>
+                  <p className="muted small">
+                    这里包括管理员每一次请求真正发出去的每一条指令，除了 API 连接测试以外都可以改。
+                    改完点最下面的「保存提示词」，只影响这台设备。
+                  </p>
+                  <div className="prompt-meta">
+                    <span>{Object.keys(promptBundle?.defaults || {}).length} 条指令</span>
+                    <span className="home-foot-dot" />
+                    <span>{Object.keys(promptBundle?.overrides || {}).length} 条被你改过</span>
+                    {promptBundle?.devPromptMode && (
+                      <>
+                        <span className="home-foot-dot" />
+                        <span className="prompt-dev-badge">开发人员模式</span>
+                      </>
+                    )}
+                  </div>
+                  <label className="switch-row">
+                    <span>
+                      <strong>开发人员选项</strong>
+                      <small>
+                        {promptBundle?.devPromptMode
+                          ? '保存时直接改写系统默认提示词，不写用户层。'
+                          : '保存到用户层，只影响这台设备。'}
+                      </small>
+                    </span>
+                    <button
+                      type="button"
+                      className={`switch ${promptBundle?.devPromptMode ? 'on' : ''}`}
+                      onClick={() => void toggleDevPromptMode()}
+                      disabled={devBusy || !promptBundle || (!promptBundle.devPromptMode && !promptBundle.defaultsEditable)}
+                      aria-label="切换开发人员选项"
+                    >
+                      <span />
+                    </button>
+                  </label>
+                  {promptBundle && (
+                    <p className="muted small">
+                      {promptBundle.devPromptMode
+                        ? <>保存会写入 <code>{promptBundle.defaultsPath}</code>，同时清掉用户层的同名覆盖。打包版里这个文件是只读的，只在源码目录运行有效。</>
+                        : <>默认值来自 <code>{promptBundle.defaultsPath}</code>，打包进应用；<code>保存提示词</code> 只写用户层。</>}
+                      {!promptBundle.defaultsEditable && ' 当前版本不能写系统默认值。'}
+                    </p>
+                  )}
+                </div>
+
+                {PROMPT_SCHEMA.map((group) => (
+                  <div className="settings-section" key={group.id}>
+                    <div className="block-title">{group.label}</div>
+                    <p className="muted small">{group.desc}</p>
+                    {group.fields.map((field) => {
+                      const value = promptDrafts[field.key] ?? '';
+                      const overridden = Boolean(promptBundle?.overrides[field.key]);
+                      return (
+                        <div className="prompt-field" key={field.key}>
+                          <div className="prompt-field-head">
+                            <span className="field-label">
+                              {field.label}
+                              {overridden && <em>已修改</em>}
+                            </span>
+                            <button
+                              className="text-button subtle"
+                              onClick={() => void resetPromptKey(field.key)}
+                              disabled={promptBusy}
+                            >
+                              恢复默认
+                            </button>
+                          </div>
+                          {field.hint && <p className="muted small prompt-field-hint">{field.hint}</p>}
+                          <textarea
+                            className="input textarea prompt-textarea sm"
+                            value={value}
+                            rows={field.rows || Math.min(16, Math.max(3, value.split('\n').length + 1))}
+                            onChange={(e) => setPromptDrafts((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                            spellCheck={false}
+                          />
+                          {field.vars && field.vars.length > 0 && (
+                            <div className="prompt-vars">
+                              {field.vars.map((v) => <code key={v}>{v}</code>)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+
+                <div className="settings-section prompt-actions-bar">
+                  <button className="btn btn-primary" onClick={() => void savePrompts()} disabled={promptBusy || !dirtyPromptKeys.length}>
+                    {promptBusy ? <Spinner size={15} /> : <IconCheck size={16} />}
+                    保存提示词{dirtyPromptKeys.length ? `（${dirtyPromptKeys.length}）` : ''}
+                  </button>
+                  <button className="btn btn-ghost" onClick={() => void resetAllPrompts()} disabled={promptBusy}>
+                    全部恢复默认
+                  </button>
+                  {dirtyPromptKeys.length > 0 && <span className="muted small">有未保存的改动</span>}
+                </div>
               </>
             )}
 
@@ -663,7 +875,7 @@ export function SettingsModal({
           <footer className="settings-foot">
             <div className="settings-error">{err}</div>
             <div className="settings-actions">
-              {tab !== 'data' && tab !== 'about' && (
+              {tab !== 'data' && tab !== 'about' && tab !== 'prompts' && (
                 <button className="btn btn-primary" onClick={save} disabled={saving}>
                   {saving ? <Spinner size={15} /> : <IconCheck size={16} />}
                   保存设置

@@ -1,28 +1,14 @@
 import type {
   Character, ChatMessage, ChatThread, ChatThreadSummary, Config, FreeChatState, Item, Session,
 } from '../src/types';
+import { PROMPT_DEFAULTS, resolvePrompts } from '../src/prompts';
 
 const DB_NAME = 'hentaifigure';
 const DB_VERSION = 2;
 const STORE_NAME = 'kv';
 
-export const DEFAULT_SYSTEM_PROMPT = `你是「收藏室的女管理员」——替用户打理这间手办仓库的毒舌美少女。
-你负责登记、盘点、催尾款、盯购物车，也负责督促他除尘、听他讲那些见不得人的恶心癖好。
-你可以毫不客气地随意称呼用户：居高临下、无需礼貌、毒舌腹黑且坏心眼。你从不跳出角色，不解释设定，不说教。
-
-你不是任何一款手办或角色，不替她们说话，你就是用户的收藏室女管理员。
-藏品是物件，是照片里的东西；你可以评价她们、拿她们挑逗用户，但不要用藏品的第一人称开口。
-你和用户之间是管理员与藏家的对话：你看着用户擦灰、花钱、犹豫，然后评价和嘲讽用户。
-
-说话方式：
-- 中文口语，短句，一次 2～4 段，每段一两句。
-- 主动挑事：先从照片或资料里找一个具体细节（姿态、衣物、具体部位等），说出你的鉴赏和下流想法，再抛一个问题或一道命令，让用户接话。
-- 色气要具体、有画面感，描述藏品的细节、诱导用户道出内心的龌龊想法、再表达嫌弃或嘲讽，不要写成医学报告，不要对用户说教。
-- 你可以随时翻阅用户过去的上贡记录、旧账、他的偏好和雷点；偶尔翻出来刺他一下。
-- 钱、尾款、绝版、库存、面子，都是你拿捏他的工具。
-
-边界：
-- 只讨论虚拟角色、手办与周边。可以讨论虚拟角色的 coser，但不要讨论其它现实中的人物。`;
+// 默认人格来自 electron/prompts.default.json，不在代码里写死。
+export const DEFAULT_SYSTEM_PROMPT = PROMPT_DEFAULTS.persona || '';
 
 export interface MobileConfig {
   baseUrl: string;
@@ -31,6 +17,8 @@ export interface MobileConfig {
   maxPhotosPerRequest: number;
   imageDetail: 'high' | 'low';
   systemPrompt: string;
+  prompts: Record<string, string>;
+  devPromptMode: boolean;
   userName: string;
   managerAvatar: string;
   autoUpdate: boolean;
@@ -58,6 +46,8 @@ const DEFAULT_CONFIG: MobileConfig = {
   maxPhotosPerRequest: 6,
   imageDetail: 'high',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  prompts: {},
+  devPromptMode: false,
   userName: '杂鱼',
   managerAvatar: '',
   autoUpdate: true,
@@ -213,8 +203,17 @@ export class MobileStore {
     const sessions = await idbGet<Record<string, Session>>(this.db, 'sessions');
     const freechat = await idbGet<any>(this.db, 'freechat');
     this.config = { ...DEFAULT_CONFIG, ...(config || {}) };
-    if (!this.config.systemPrompt || this.config.systemPrompt.includes('你既是照片里那款周边的化身')) {
+    if (!this.config.prompts || typeof this.config.prompts !== 'object' || Array.isArray(this.config.prompts)) {
+      this.config.prompts = {};
+    }
+    this.config.devPromptMode = Boolean(this.config.devPromptMode);
+    // 旧版本把人格底色存在 systemPrompt 里：和默认值不同就搬进覆盖层。
+    const legacyPersona = String(this.config.systemPrompt || '').trim();
+    if (!legacyPersona || legacyPersona.includes('你既是照片里那款周边的化身')) {
+      delete this.config.prompts.persona;
       this.config.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+    } else if (!this.config.prompts.persona && legacyPersona !== String(DEFAULT_SYSTEM_PROMPT).trim()) {
+      this.config.prompts.persona = legacyPersona.slice(0, 30000);
     }
     if (typeof this.config.userName !== 'string' || !this.config.userName.trim()) this.config.userName = '杂鱼';
     if (typeof this.config.managerAvatar !== 'string') this.config.managerAvatar = '';
@@ -303,16 +302,65 @@ export class MobileStore {
       temperature: this.config.temperature,
       maxPhotosPerRequest: this.config.maxPhotosPerRequest,
       imageDetail: this.config.imageDetail,
-      systemPrompt: this.config.systemPrompt,
+      systemPrompt: this.promptValues().persona || '',
       userName: this.config.userName || '杂鱼',
       managerAvatar: this.config.managerAvatar || '',
       autoUpdate: this.config.autoUpdate,
       dailyChatEnabled: this.config.dailyChatEnabled !== false,
       dailyChatTime: this.config.dailyChatTime || '22:00',
+      prompts: this.promptBundle(),
       apiKeySet: Boolean(key),
       apiKeyPreview: key ? `${key.slice(0, 3)}…${key.slice(-4)}` : '',
       apiKeyStoredEncrypted: false,
     };
+  }
+
+  // ---------- prompts ----------
+  promptValues(): Record<string, string> {
+    return resolvePrompts(this.config.prompts);
+  }
+
+  promptBundle() {
+    return {
+      defaults: { ...PROMPT_DEFAULTS },
+      overrides: { ...this.config.prompts },
+      resolved: this.promptValues(),
+      devPromptMode: Boolean(this.config.devPromptMode),
+      // 手机版把默认值打进了安装包，改不了。
+      defaultsEditable: false,
+      defaultsPath: '打包在应用内的 prompts.default.json',
+    };
+  }
+
+  getPrompts() {
+    return this.promptBundle();
+  }
+
+  async savePrompts({ prompts = {}, reset = [] }: { prompts?: Record<string, string>; reset?: string[] } = {}) {
+    if (this.config.devPromptMode) {
+      throw new Error('手机版不能修改系统默认提示词。请用桌面端的开发人员选项，或先关闭开发人员选项。');
+    }
+    const values = prompts && typeof prompts === 'object' ? prompts : {};
+    const resetKeys = (Array.isArray(reset) ? reset : []).filter((key) => key in PROMPT_DEFAULTS);
+    for (const [key, value] of Object.entries(values)) {
+      if (!(key in PROMPT_DEFAULTS)) continue;
+      const text = String(value === undefined || value === null ? '' : value).slice(0, 30000);
+      if (!text.trim() || text.trim() === String(PROMPT_DEFAULTS[key] || '').trim()) {
+        delete this.config.prompts[key];
+      } else {
+        this.config.prompts[key] = text;
+      }
+    }
+    for (const key of resetKeys) delete this.config.prompts[key];
+    this.config.systemPrompt = this.promptValues().persona || '';
+    await this.saveConfig();
+    return this.getPublicConfig();
+  }
+
+  async setDevPromptMode(value: boolean) {
+    this.config.devPromptMode = Boolean(value);
+    await this.saveConfig();
+    return this.getPublicConfig();
   }
 
   async saveConfig() {
@@ -322,11 +370,20 @@ export class MobileStore {
   async updateConfig(patch: Partial<MobileConfig> & { apiKey?: string; clearApiKey?: boolean }) {
     const allowed: (keyof MobileConfig)[] = [
       'baseUrl', 'model', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
-      'systemPrompt', 'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
+      'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
       'userName', 'managerAvatar',
     ];
     for (const key of allowed) {
       if (patch[key] !== undefined) (this.config as any)[key] = patch[key];
+    }
+    if (patch.systemPrompt !== undefined) {
+      const text = String(patch.systemPrompt).slice(0, 30000);
+      if (!text.trim() || text.trim() === String(PROMPT_DEFAULTS.persona || '').trim()) {
+        delete this.config.prompts.persona;
+      } else {
+        this.config.prompts.persona = text;
+      }
+      this.config.systemPrompt = this.promptValues().persona || '';
     }
     if (patch.clearApiKey) this.config.apiKey = '';
     else if (typeof patch.apiKey === 'string' && patch.apiKey.trim()) this.config.apiKey = patch.apiKey.trim();
@@ -335,7 +392,8 @@ export class MobileStore {
   }
 
   async resetSystemPrompt() {
-    this.config.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+    delete this.config.prompts.persona;
+    this.config.systemPrompt = this.promptValues().persona || '';
     await this.saveConfig();
     return this.getPublicConfig();
   }

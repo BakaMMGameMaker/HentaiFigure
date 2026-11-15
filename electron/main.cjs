@@ -421,6 +421,9 @@ function registerIpc() {
     return store.updateConfig(clean);
   });
   ipcMain.handle('config:resetPrompt', () => store.resetSystemPrompt());
+  ipcMain.handle('config:prompts:get', () => store.getPrompts());
+  ipcMain.handle('config:prompts:save', (event, patch = {}) => store.savePrompts(patch));
+  ipcMain.handle('config:devPromptMode:set', (event, value) => store.setDevPromptMode(value));
   ipcMain.handle('config:pickAvatar', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: '选择管理员头像',
@@ -777,7 +780,7 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(async () => {
-  store = new Store(app.getPath('userData'));
+  store = new Store(app.getPath('userData'), { defaultsWritable: !app.isPackaged });
   cleanupOrphanImages();
   ritual = new RitualService({ store, sendEvent: send });
   updater = new Updater({

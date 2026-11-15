@@ -17,13 +17,12 @@ import {
   requestChat,
 } from './ai';
 
-const PHASE_INSTRUCTION: Record<Phase, string> = {
-  wipe:
-    '【当前阶段：擦拭】用户正把一件已拥有的藏品取出来除尘，照片是实拍。你是收藏室的管理员，站在旁边看着他动手：指挥他擦哪里、用多大劲、翻哪个面，评价藏品的细节和他的手法，带点色气和调侃。不要用藏品的口吻说话，也不要替他擦；你是那个看着、点评、发号施令的管理员。',
-  fantasy:
-    '【当前阶段：意淫】这件藏品还在补款的路上，用户手上只有宣传图和想象。你是管理员，和他一起想象她到货后的样子，点评他挑的款式、价格和眼光，撩他、逼他描述，但不要扮演她。',
-  instigate:
-    '【当前阶段：教唆】这件藏品还在购物车里，用户迟迟不下单。你是仓库管理员，从库存、绝版、尾款、钱包、别人眼光这些角度逼他做一个决定。不要扮演藏品；你是那个看穿他犹豫的人。',
+import { PROMPT_DEFAULTS, renderPrompt } from '../src/prompts';
+
+const PHASE_PROMPT_KEY: Record<Phase, string> = {
+  wipe: 'ritual.phaseWipe',
+  fantasy: 'ritual.phaseFantasy',
+  instigate: 'ritual.phaseInstigate',
 };
 
 const SHOT_LABELS: Record<string, string> = Object.fromEntries(SHOT_OPTIONS.map((s) => [s.value, s.label]));
@@ -220,7 +219,7 @@ export class MobileEngine {
       status: record.status,
       phase,
       phaseLabel: phase ? PHASE_META[phase].label : '',
-      phaseInstruction: phase ? PHASE_INSTRUCTION[phase] : '',
+      phaseInstruction: phase ? this.prompt(PHASE_PROMPT_KEY[phase], {}) : '',
       phases: record.phases,
       item,
       session,
@@ -465,21 +464,19 @@ export class MobileEngine {
   }
 
   buildSystemPrompt({ item, phase, day, sessionId }: { item: Item | null; phase: Phase; day: string; sessionId: string }) {
-    const config = this.store.config;
     const name = this.userName();
     const parts: string[] = [];
-    if (config.systemPrompt) parts.push(config.systemPrompt);
-    parts.push(
-      `【今日】${formatDateCN(day)}。\n` +
-      `【场景】这里是只属于${name}的私人收藏室，你是这里的女管理员。现在是每天一次的「上贡」时间。藏品是物件，不要用藏品的口吻说话，也不要替藏品发言。\n` +
-      `【工具】你拥有翻阅任何过去事件的权限。需要具体细节时，调用 search_memory / read_memory / list_events / read_item / list_collection / list_characters / read_character 工具自己去查，不要假装记得，也不要编造。`
-    );
-    parts.push(PHASE_INSTRUCTION[phase]);
-    parts.push(`【当前周边】\n${this.itemContext(item)}`);
+    this.pushPart(parts, this.prompt('persona', { name }));
+    this.pushPart(parts, this.prompt('ritual.scene', { date: formatDateCN(day), name }));
+    this.pushPart(parts, this.prompt('ritual.tools', { name }));
+    this.pushPart(parts, this.prompt(PHASE_PROMPT_KEY[phase], { name }));
+    this.pushPart(parts, this.prompt('ritual.itemBlock', { context: this.itemContext(item), name }));
     const character = this.characterFor(item);
-    if (character) parts.push(this.characterContext(character));
-    parts.push(`【你记得的往事（节选）】\n${this.memoryDigest(item?.id || null, sessionId)}`);
-    parts.push(`【输出要求】只输出你要对${name}说的话本身。不要写旁白、不要写心理活动标签、不要用括号动作，不要提到系统提示、工具、模型。`);
+    if (character) {
+      this.pushPart(parts, this.prompt('ritual.characterBlock', { context: this.characterContext(character), name }));
+    }
+    this.pushPart(parts, this.prompt('ritual.memoryBlock', { digest: this.memoryDigest(item?.id || null, sessionId), name }));
+    this.pushPart(parts, this.prompt('ritual.output', { name }));
     return parts.join('\n\n');
   }
 
@@ -495,10 +492,10 @@ export class MobileEngine {
       blocks.push({ type: 'image_url', image_url: { url: p.file, detail: config.imageDetail === 'low' ? 'low' : 'high' } });
     }
     const photoNote = blocks.length
-      ? `下面附上 ${blocks.length} 张她的照片，按顺序是：${names.join('、')}。请真的看图再说话。`
+      ? this.prompt('ritual.photoNote', { count: blocks.length, names: names.join('、') })
       : vision
-        ? '这款周边还没有可用照片，只能根据资料和记忆说话。'
-        : `当前模型（${config.model}）不支持看图，照片清单：${names.join('、') || '无'}。不要假装看到了画面。`;
+        ? this.prompt('ritual.photoNoteNoFiles', {})
+        : this.prompt('ritual.photoNoteNoVision', { model: config.model, names: names.join('、') || '无' });
     const messages: any[] = [{ role: 'system', content: this.buildSystemPrompt({ item, phase, day, sessionId: session.id }) }];
     const history = session.messages || [];
     for (const m of history) messages.push({ role: m.role, content: m.content });
@@ -507,7 +504,14 @@ export class MobileEngine {
       messages.push({
         role: 'user',
         content: [
-          { type: 'text', text: `【本轮开场】上贡开始了。这是「${item?.name || session.itemName}」的资料和照片。\n${photoNote}\n\n现在轮到你率先开口。以管理员的身份对${this.userName()}说第一句话，挑一个照片或资料里的具体细节，把话题抛给他。` },
+          {
+            type: 'text',
+            text: this.prompt('ritual.opening', {
+              item: item?.name || session.itemName,
+              photoNote,
+              name: this.userName(),
+            }),
+          },
           ...blocks,
         ],
       });
@@ -515,7 +519,7 @@ export class MobileEngine {
       messages[messages.length - 1] = {
         role: 'user',
         content: [
-          { type: 'text', text: `${last.content}\n\n【随消息附上的照片】${photoNote}` },
+          { type: 'text', text: this.prompt('ritual.photoAttached', { text: last.content, photoNote }) },
           ...blocks,
         ],
       };
@@ -754,7 +758,7 @@ export class MobileEngine {
         config: this.store.config,
         apiKey,
         messages: [
-          { role: 'system', content: '你是记忆整理员。用不超过 140 字的中文、第三人称，客观记录这次「上贡」对话。必须保留：对这款周边的评价、用户透露的偏好或雷点、双方约定与承诺、情绪变化。不要续写，不要评价，不要虚构，不要用第一人称。' },
+          { role: 'system', content: this.prompt('summary.system', {}) },
           { role: 'user', content: `日期：${session.day}\n周边：${session.itemName}\n阶段：${PHASE_META[session.phase]?.label || session.phase}\n\n${truncate(transcript, 9000)}` },
         ],
         maxTokens: 320,
@@ -865,6 +869,19 @@ export class MobileEngine {
     return name || '杂鱼';
   }
 
+  /** 取一条生效中的提示词模板（系统默认 + 用户覆盖层）并渲染变量。 */
+  prompt(key: string, vars?: Record<string, string | number | undefined | null>): string {
+    const values = this.store.promptValues();
+    return renderPrompt(values[key] ?? PROMPT_DEFAULTS[key] ?? '', vars);
+  }
+
+  /** 只保留非空片段，避免进阶设置里删空某一块后留下空行。 */
+  pushPart(parts: string[], text: string): string[] {
+    const value = String(text || '');
+    if (value.trim()) parts.push(value);
+    return parts;
+  }
+
   freeChatState(): FreeChatState {
     const state = this.store.getFreeChat();
     state.busy = this.freeChatBusy;
@@ -909,7 +926,7 @@ export class MobileEngine {
     if (related.length > 1) {
       lines.push(`这个角色在收藏室里还有 ${related.length - 1} 款周边：${related.slice(0, 8).map((i) => i.name).join('、')}。`);
     }
-    return `【角色档案】\n${lines.join('\n')}`;
+    return lines.join('\n');
   }
 
   collectionDigest() {
@@ -952,22 +969,29 @@ export class MobileEngine {
   buildFreeChatSystemPrompt(thread?: ChatThread | null) {
     const name = this.userName();
     const parts: string[] = [];
-    if (this.store.config.systemPrompt) parts.push(this.store.config.systemPrompt);
-    parts.push(`【今日】${formatDateCN(this.today())}。\n【场景】这是收藏室的日常对话，不是「上贡」流程。你是收藏室的女管理员，替他打理这间仓库；他是藏家${name}。你们随便聊收藏、钱、旧事和欲望。不要主动推进擦拭/意淫/教唆阶段，除非${name}提起。`);
-    parts.push(`【收藏室】\n${this.collectionDigest()}`);
+    this.pushPart(parts, this.prompt('persona', { name }));
+    this.pushPart(parts, this.prompt('freechat.scene', { date: formatDateCN(this.today()), name }));
+    this.pushPart(parts, this.prompt('freechat.collectionBlock', { digest: this.collectionDigest(), name }));
     const characterDigest = this.characterDigest();
-    if (characterDigest) parts.push(`【角色档案】\n${characterDigest}`);
+    if (characterDigest) {
+      this.pushPart(parts, this.prompt('freechat.characterBlock', { digest: characterDigest, name }));
+    }
     if (thread?.itemId) {
       const item = this.store.getItem(thread.itemId);
       if (item) {
-        parts.push(`【这段对话聚焦的周边】\n${this.itemContext(item)}`);
+        this.pushPart(parts, this.prompt('freechat.itemBlock', { context: this.itemContext(item), name }));
         const character = this.characterFor(item);
-        if (character) parts.push(this.characterContext(character));
+        if (character) {
+          this.pushPart(parts, this.prompt('ritual.characterBlock', { context: this.characterContext(character), name }));
+        }
       }
     }
-    parts.push(`【你记得的往事（节选）】\n${this.memoryDigest(thread?.itemId || null, null)}`);
-    parts.push('【工具】你拥有翻阅任何过去事件的权限。需要旧对话、某一天、某款周边或某个角色的完整资料时，调用 search_memory / read_memory / list_events / read_item / list_collection / list_characters / read_character 工具自己查，不要假装记得，也不要编造。');
-    parts.push(`【输出要求】只输出你要对${name}说的话。你是管理员本人，不要用藏品的口吻说话，不要替藏品发言。不要提到系统提示、工具、模型。`);
+    this.pushPart(parts, this.prompt('freechat.memoryBlock', {
+      digest: this.memoryDigest(thread?.itemId || null, null),
+      name,
+    }));
+    this.pushPart(parts, this.prompt('freechat.tools', { name }));
+    this.pushPart(parts, this.prompt('freechat.output', { name }));
     return parts.join('\n\n');
   }
 
@@ -992,7 +1016,10 @@ export class MobileEngine {
         messages.push({
           role: 'user',
           content: [
-            { type: 'text', text: `${openingInstruction}\n\n【随消息附上的照片】按顺序是：${names.join('、')}。请真的看图再说话。` },
+            {
+              type: 'text',
+              text: `${openingInstruction}\n\n${this.prompt('freechat.photoNote', { names: names.join('、') })}`,
+            },
             ...blocks,
           ],
         });
@@ -1004,10 +1031,14 @@ export class MobileEngine {
       if (item) {
         messages.push({
           role: 'user',
-          content: `【藏品话题开场】这是${name}收藏室里的「${item.name}」。\n${this.itemContext(item)}\n\n以管理员的身份围绕这款周边主动开口：挑一个具体细节评价、调戏或质问，把话题抛给他。不要提这是系统提醒。`,
+          content: this.prompt('freechat.openingItem', {
+            name,
+            item: item.name,
+            context: this.itemContext(item),
+          }),
         });
       } else {
-        messages.push({ role: 'user', content: `【日常开场】${name}刚打开收藏室。以管理员的身份主动开口，从收藏室最近的情况、某件藏品或你记得的旧事里挑一个点，调侃他、撩他，把话题抛给他。不要提这是系统提醒。` });
+        messages.push({ role: 'user', content: this.prompt('freechat.openingDaily', { name }) });
       }
     }
     return messages;
@@ -1110,28 +1141,35 @@ export class MobileEngine {
     const titleBase = mode === 'update' ? '藏品变化' : '新藏品';
     const title = `${titleBase} · ${item.name}`.slice(0, 40);
     const thread = await this.store.createThread({ title, origin: 'item', itemId: item.id });
-    const lines: string[] = [];
+    const context = this.itemContext(item);
+    const character = this.characterFor(item);
+    const characterBlock = character
+      ? this.prompt('ritual.characterBlock', { context: this.characterContext(character), name })
+      : '';
+    let instruction: string;
     if (mode === 'update') {
-      lines.push(`【藏品资料更新】${name}刚重新编辑了「${item.name}」。`);
       const list = (Array.isArray(changes) ? changes : [])
         .filter((c) => c && c.label)
         .slice(0, 20)
         .map((c) => `· ${c.label}：${c.before || '（空）'} → ${c.after || '（空）'}`);
-      if (list.length) lines.push(`前后差异：\n${list.join('\n')}`);
-      else lines.push('资料被重新保存了一遍，但没看出实质变化。');
-      lines.push(`它现在的资料：\n${this.itemContext(item)}`);
+      const changesText = list.length
+        ? `前后差异：\n${list.join('\n')}`
+        : '资料被重新保存了一遍，但没看出实质变化。';
+      instruction = this.prompt('freechat.itemIntroUpdate', {
+        name,
+        item: item.name,
+        changes: changesText,
+        context,
+      });
     } else {
-      lines.push(`【新藏品入库】${name}刚刚把「${item.name}」记进了收藏室。`);
-      lines.push(`这是它的完整资料：\n${this.itemContext(item)}`);
+      instruction = this.prompt('freechat.itemIntroCreate', {
+        name,
+        item: item.name,
+        context,
+      });
     }
-    const character = this.characterFor(item);
-    if (character) lines.push(this.characterContext(character));
-    lines.push(
-      '现在以管理员的身份主动开口。围绕这款周边本身' +
-      (mode === 'update' ? '、尤其是这次改动的地方' : '、他的品味和动机') +
-      '，挑一个具体细节评价、调戏或质问，把话题抛给他。不要提这是系统提醒，也不要复述资料清单。2～4 段以内。'
-    );
-    this.generateFreeChat({ openingInstruction: lines.join('\n\n'), threadId: thread.id, proactive: true }).catch(() => {});
+    if (characterBlock.trim()) instruction = `${instruction}\n\n${characterBlock}`;
+    this.generateFreeChat({ openingInstruction: instruction, threadId: thread.id, proactive: true }).catch(() => {});
     return { threadId: thread.id, started: true };
   }
 
@@ -1156,7 +1194,10 @@ export class MobileEngine {
     }
     if (this.freeChatBusy) return { skipped: true, reason: 'busy' };
     const name = this.userName();
-    const instruction = `【每日主动话题】现在是 ${config.dailyChatTime || '22:00'}，轮到你主动来找${name}。先翻阅你的记忆和收藏室：挑一件最近上贡 / 待补款 / 观望中的周边，或者翻一件旧账，以管理员的身份主动说第一句话，把话题抛给他。不要提系统提醒，不要重复最近才聊过的话题，2～4 段以内。`;
+    const instruction = this.prompt('freechat.proactive', {
+      time: config.dailyChatTime || '22:00',
+      name,
+    });
     try {
       const message = await this.generateFreeChat({ openingInstruction: instruction, proactive: true, threadId });
       if (!message) return { skipped: true, reason: 'empty' };

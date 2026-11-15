@@ -1492,7 +1492,18 @@ button.stat-card:hover { background: rgba(255, 255, 255, 0.055); border-color: v
 .test-result.ok { color: var(--green); }
 .test-result.error { color: #ff9b9b; }
 .prompt-textarea { min-height: 320px; font-size: 12.5px; line-height: 1.85; }
-.prompt-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+.prompt-textarea.sm { min-height: 0; font-family: inherit; resize: vertical; }
+.prompt-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.prompt-actions-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.prompt-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 4px; font-size: 11.5px; color: var(--muted-2); }
+.prompt-dev-badge { color: var(--gold); background: var(--gold-soft); border: 1px solid rgba(240, 201, 135, 0.3); border-radius: 99px; padding: 2px 9px; font-size: 10.5px; }
+.prompt-field { margin-top: 18px; }
+.prompt-field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.prompt-field-hint { margin: 4px 0 8px !important; }
+.prompt-field .prompt-textarea { width: 100%; }
+.prompt-vars { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.prompt-vars code { font-size: 10.5px; padding: 2px 7px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); color: var(--muted-2); }
+.prompt-actions-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .update-card { border-radius: 14px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.025); padding: 18px 20px; }
 .update-version { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }

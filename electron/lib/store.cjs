@@ -3,24 +3,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const promptLib = require('./prompts.cjs');
 
-const DEFAULT_SYSTEM_PROMPT = `你是「收藏室的女管理员」——替用户打理这间手办仓库的毒舌美少女。
-你负责登记、盘点、催尾款、盯购物车，也负责督促他除尘、听他讲那些见不得人的恶心癖好。
-你可以毫不客气地随意称呼用户：居高临下、无需礼貌、毒舌腹黑且坏心眼。你从不跳出角色，不解释设定，不说教。
-
-你不是任何一款手办或角色，不替她们说话，你就是用户的收藏室女管理员。
-藏品是物件，是照片里的东西；你可以评价她们、拿她们挑逗用户，但不要用藏品的第一人称开口。
-你和用户之间是管理员与藏家的对话：你看着用户擦灰、花钱、犹豫，然后评价和嘲讽用户。
-
-说话方式：
-- 中文口语，短句，一次 2～4 段，每段一两句。
-- 主动挑事：先从照片或资料里找一个具体细节（姿态、衣物、具体部位等），说出你的鉴赏和下流想法，再抛一个问题或一道命令，让用户接话。
-- 色气要具体、有画面感，描述藏品的细节、诱导用户道出内心的龌龊想法、再表达嫌弃或嘲讽，不要写成医学报告，不要对用户说教。
-- 你可以随时翻阅用户过去的上贡记录、旧账、他的偏好和雷点；偶尔翻出来刺他一下。
-- 钱、尾款、绝版、库存、面子，都是你拿捏他的工具。
-
-边界：
-- 只讨论虚拟角色、手办与周边。可以讨论虚拟角色的 coser，但不要讨论其它现实中的人物。`;
+// 默认人格来自 electron/prompts.default.json（键 persona），
+// 不在代码里写死；用户可以在进阶设置里单独覆盖，或由开发人员模式写回默认文件。
+const DEFAULT_SYSTEM_PROMPT = promptLib.get('persona');
 
 const DEFAULT_CONFIG = {
   baseUrl: 'https://api.deepseek.com',
@@ -29,6 +16,8 @@ const DEFAULT_CONFIG = {
   maxPhotosPerRequest: 6,
   imageDetail: 'high',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  prompts: {},
+  devPromptMode: false,
   userName: '杂鱼',
   managerAvatar: '',
   autoUpdate: true,
@@ -183,11 +172,13 @@ function normalizeFreeChat(raw) {
 }
 
 class Store {
-  constructor(userDataDir) {
+  constructor(userDataDir, options = {}) {
     this.root = userDataDir;
     this.dataDir = path.join(userDataDir, 'data');
     this.imagesDir = path.join(this.dataDir, 'images');
     this.backupDir = path.join(this.dataDir, 'backups');
+    // 打包后 app.asar 是只读的，开发人员模式不能再改系统默认提示词。
+    this.defaultsWritable = options.defaultsWritable !== false;
     ensureDir(this.imagesDir);
     ensureDir(this.backupDir);
 
@@ -212,6 +203,10 @@ class Store {
     if (!this.sessions || typeof this.sessions !== 'object') this.sessions = {};
     if (typeof this.config.userName !== 'string' || !this.config.userName.trim()) this.config.userName = '杂鱼';
     if (typeof this.config.managerAvatar !== 'string') this.config.managerAvatar = '';
+    if (!this.config.prompts || typeof this.config.prompts !== 'object' || Array.isArray(this.config.prompts)) {
+      this.config.prompts = {};
+    }
+    this.config.devPromptMode = Boolean(this.config.devPromptMode);
 
     let migrated = false;
     for (const item of this.items) {
@@ -248,11 +243,18 @@ class Store {
       writeJsonAtomic(this.freechatPath, this.freechat);
     }
 
-    // The first release used a prompt where the model role-played the figure.
-    // Replace only the known old defaults; custom prompts are left untouched.
-    const prompt = String(this.config.systemPrompt || '');
-    if (!prompt || prompt.includes('你既是照片里那款周边的化身') || prompt === '') {
+    // 旧版本把人格底色直接存在 systemPrompt 里，而且默认值是写死在代码里的。
+    // 现在默认值在 electron/prompts.default.json：旧值和新默认不同就搬进 prompt 覆盖层，
+    // 等于默认值（或第一版的「化身」提示词）就什么都不用做。
+    const persona = String(this.config.systemPrompt || '').trim();
+    const defaultPersona = String(DEFAULT_SYSTEM_PROMPT || '').trim();
+    const v1Hint = '你既是照片里那款周边的化身';
+    if (!persona || persona.includes(v1Hint)) {
+      delete this.config.prompts.persona;
       this.config.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+      this.saveConfig();
+    } else if (!this.config.prompts.persona && persona !== defaultPersona) {
+      this.config.prompts.persona = persona.slice(0, 30000);
       this.saveConfig();
     }
   }
@@ -305,17 +307,86 @@ class Store {
       temperature: this.config.temperature,
       maxPhotosPerRequest: this.config.maxPhotosPerRequest,
       imageDetail: this.config.imageDetail,
-      systemPrompt: this.config.systemPrompt,
+      systemPrompt: this.promptValues().persona || '',
       userName: this.config.userName || '杂鱼',
       managerAvatar: this.config.managerAvatar || '',
       autoUpdate: this.config.autoUpdate,
       dailyChatEnabled: this.config.dailyChatEnabled !== false,
       dailyChatTime: this.config.dailyChatTime || '22:00',
+      prompts: this.promptBundle(),
       apiKeySet: Boolean(key),
       apiKeyPreview: key ? `${key.slice(0, 3)}…${key.slice(-4)}` : '',
       apiKeyStoredEncrypted: Boolean(this.config.apiKeyEnc),
     };
   }
+
+  // ---------- prompts ----------
+  /** 当前生效的提示词：系统默认 + 用户覆盖层。 */
+  promptValues() {
+    return promptLib.resolve(this.config.prompts);
+  }
+
+  promptBundle() {
+    return {
+      defaults: { ...promptLib.defaults },
+      overrides: { ...this.config.prompts },
+      resolved: this.promptValues(),
+      devPromptMode: Boolean(this.config.devPromptMode),
+      defaultsEditable: Boolean(this.defaultsWritable),
+      defaultsPath: promptLib.DEFAULTS_PATH,
+    };
+  }
+
+  getPrompts() {
+    return this.promptBundle();
+  }
+
+  /**
+   * 保存提示词。
+   * 普通模式：写进用户层的 config.prompts（只保存和默认值不同的键）。
+   * 开发人员模式：直接改 electron/prompts.default.json，等于改掉系统默认值。
+   */
+  savePrompts({ prompts = {}, reset = [] } = {}) {
+    const values = prompts && typeof prompts === 'object' && !Array.isArray(prompts) ? prompts : {};
+    const resetKeys = (Array.isArray(reset) ? reset : []).filter((key) => promptLib.has(key));
+    const clean = {};
+    for (const [key, value] of Object.entries(values)) {
+      if (!promptLib.has(key)) continue;
+      clean[key] = String(value === undefined || value === null ? '' : value).slice(0, 30000);
+    }
+
+    if (this.config.devPromptMode) {
+      if (!this.defaultsWritable) {
+        throw new Error('当前版本不能修改系统默认提示词。请在源码目录里用开发模式运行，或关闭开发人员选项。');
+      }
+      const next = { ...clean };
+      for (const key of resetKeys) delete next[key];
+      if (Object.keys(next).length) promptLib.writeDefaults(next);
+      // 默认值变了，用户层里残留的同名覆盖会被覆盖掉，这里一并清掉避免两份不一致。
+      for (const key of [...Object.keys(next), ...resetKeys]) delete this.config.prompts[key];
+    } else {
+      for (const [key, value] of Object.entries(clean)) {
+        if (!value.trim() || value.trim() === String(promptLib.get(key)).trim()) {
+          delete this.config.prompts[key];
+        } else {
+          this.config.prompts[key] = value;
+        }
+      }
+      for (const key of resetKeys) delete this.config.prompts[key];
+    }
+
+    // systemPrompt 是历史字段，继续镜像人格底色，避免老代码读到空值。
+    this.config.systemPrompt = this.promptValues().persona || '';
+    this.saveConfig();
+    return this.getPublicConfig();
+  }
+
+  setDevPromptMode(value) {
+    this.config.devPromptMode = Boolean(value);
+    this.saveConfig();
+    return this.getPublicConfig();
+  }
+
 
   getApiKey() {
     if (this.config.apiKeyEnc) {
@@ -357,11 +428,21 @@ class Store {
   updateConfig(patch) {
     const allowed = [
       'baseUrl', 'model', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
-      'systemPrompt', 'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
+      'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
       'userName', 'managerAvatar',
     ];
     for (const key of allowed) {
       if (patch[key] !== undefined) this.config[key] = patch[key];
+    }
+    // 人格底色走提示词覆盖层：等于默认值时不留覆盖，改过才记下来。
+    if (patch.systemPrompt !== undefined) {
+      const text = String(patch.systemPrompt).slice(0, 30000);
+      if (!text.trim() || text.trim() === String(promptLib.get('persona')).trim()) {
+        delete this.config.prompts.persona;
+      } else {
+        this.config.prompts.persona = text;
+      }
+      this.config.systemPrompt = this.promptValues().persona || '';
     }
     if (patch.apiKey !== undefined) this.setApiKey(patch.apiKey);
     this.saveConfig();
@@ -369,7 +450,8 @@ class Store {
   }
 
   resetSystemPrompt() {
-    this.config.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+    delete this.config.prompts.persona;
+    this.config.systemPrompt = this.promptValues().persona || '';
     this.saveConfig();
     return this.getPublicConfig();
   }
