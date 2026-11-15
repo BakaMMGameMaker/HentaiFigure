@@ -9,7 +9,9 @@ import { exportSyncZip, importSyncZip } from './sync';
 import { friendlyError, testConnection } from './ai';
 import appConfig from '../app-config.json';
 
-const APP_VERSION = '1.2.0';
+// 版本号由 vite.mobile.config.ts 从 package.json 注入，避免手改漏改。
+declare const __APP_VERSION__: string;
+const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0';
 const ALLOWED_STATUS = new Set(['owned', 'pending', 'watching']);
 const ALLOWED_SHOTS = new Set(['promo', 'real', 'full', 'face', 'armpit', 'chest', 'back', 'belly', 'private', 'butt', 'underSkirt', 'thigh', 'feet', 'other']);
 const ALLOWED_TYPES = new Set(['figure', 'acrylic', 'pillow', 'poster', 'badge', 'itabag', 'plush', 'other']);

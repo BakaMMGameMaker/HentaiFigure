@@ -16,7 +16,7 @@ HentaiFigure 是一个**完全本地运行**的收藏管理应用（Windows 桌�
 2. 第一次启动会自动安装依赖并构建界面，可能需要一两分钟；之后每次启动只需几秒。
 3. 出现窗口后，点右上角的 **设置**，填入 DeepSeek API Key。
 
-已经打包好的免安装便携版在 **`release\HentaiFigure-1.3.0-portable.exe`**，双击也能直接打开（不需要 Node.js）。数据同样在 `%APPDATA%\HentaiFigure`。不过便携版不支持应用内自动更新；想用自动更新就双击 `启动.bat` 的源码方式运行。
+已经打包好的免安装便携版在 **`release\HentaiFigure-1.3.1-portable.exe`**，双击也能直接打开（不需要 Node.js）。数据同样在 `%APPDATA%\HentaiFigure`。不过便携版不支持应用内自动更新；想用自动更新就双击 `启动.bat` 的源码方式运行。
 
 想把快捷方式放到桌面，双击 **`创建桌面快捷方式.bat`**。
 
@@ -174,7 +174,7 @@ HentaiFigure 是一个**完全本地运行**的收藏管理应用（Windows 桌�
 已经构建好的 APK 在：
 
 ```text
-release\HentaiFigure-1.3.0-android.apk
+release\HentaiFigure-1.3.1-android.apk
 ```
 
 （源码构建产物在 `android/app/build/outputs/apk/debug/app-debug.apk`。）
@@ -211,7 +211,7 @@ npm run android:apk
 
 「设置 → 更新」会显示写死的官方仓库地址。打开「启动时自动检查」后，手机会读取 GitHub Release（或 master 分支的 `package.json`）判断是否有新版本。
 
-手机版不能应用内替换 APK；发现新版本后会给出发布页入口，下载新 APK 覆盖安装即可。收藏和记忆在应用数据里，覆盖安装不会丢。实际上，`version` 要大于当前 `1.3.0` 才会提示。
+手机版不能应用内替换 APK；发现新版本后会给出发布页入口，下载新 APK 覆盖安装即可。收藏和记忆在应用数据里，覆盖安装不会丢。实际上，`version` 要大于当前 `1.3.1` 才会提示。
 
 ### 手机版限制
 
@@ -304,7 +304,7 @@ scripts/
 同步时手机和电脑都要选择完整 ZIP。电脑导出时不要把 `images/` 单独拆出去；手机导入后应用会自动刷新。若只同步了 JSON，照片会缺。
 
 **手机版检查更新显示已是最新，但 GitHub 有新版本**
-手机端比较的是应用版本号（当前 `1.3.0`）和 Release/tag；发布时记得把 `package.json` 的 `version` 改大，并打上对应的 tag。
+手机端比较的是应用版本号（当前 `1.3.1`）和 Release/tag；发布时记得把 `package.json` 的 `version` 改大，并打上对应的 tag。
 
 **手机版没有在后台主动发消息**
 这是设计如此：Android 后台定时不可靠，手机版只在应用打开或切回前台时补检查一次。
@@ -323,6 +323,10 @@ HentaiFigure 是个人使用的虚构角色周边收藏管理工具。生成内�
 ---
 
 ## 更新日志
+
+### v1.3.1
+
+- 修掉手机版版本号写死的问题：`mobile/api.ts` 里原来硬编码 `1.2.0`，导致「设置 → 关于」显示旧版本、更新检查一直提示有新版本。现在版本号在构建时从 `package.json` 注入，Android 的 `versionCode` / `versionName` 同步改成 4 / `1.3.1`。
 
 ### v1.3.0
 
