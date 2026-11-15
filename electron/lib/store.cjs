@@ -15,7 +15,6 @@ const DEFAULT_CONFIG = {
   baseUrl: DEEPSEEK_URL,
   model: DEFAULT_VISION_MODEL,
   temperature: 1.3,
-  maxPhotosPerRequest: 6,
   imageDetail: 'high',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   prompts: {},
@@ -107,7 +106,7 @@ function newThread(id, { title, origin = 'manual', itemId = null } = {}) {
 function threadPreview(thread) {
   const last = (thread.messages || [])[thread.messages.length - 1];
   if (!last) return '还没有开口。';
-  return String(last.content || '').replace(/\s+/g, ' ').slice(0, 90);
+  return String(last.content || '').replace(/\s+/g, ' ').slice(0, 90) || (last.images?.length ? '[图片]' : '');
 }
 
 function threadSummary(thread) {
@@ -195,6 +194,10 @@ class Store {
     this.config = { ...clone(DEFAULT_CONFIG), ...readJson(this.configPath, {}) };
     const model = migrateVisionModel(this.config);
     let configChanged = model !== this.config.model;
+    if (Object.hasOwn(this.config, 'maxPhotosPerRequest')) {
+      delete this.config.maxPhotosPerRequest;
+      configChanged = true;
+    }
     this.config.model = model;
     this.items = readJson(this.itemsPath, DEFAULT_ITEMS);
     this.characters = readJson(this.charactersPath, DEFAULT_CHARACTERS);
@@ -317,7 +320,6 @@ class Store {
       model: this.config.model,
       visionModelReady: isVisionReady(this.config),
       temperature: this.config.temperature,
-      maxPhotosPerRequest: this.config.maxPhotosPerRequest,
       imageDetail: this.config.imageDetail,
       systemPrompt: this.promptValues().persona || '',
       userName: this.config.userName || '杂鱼',
@@ -440,7 +442,7 @@ class Store {
   updateConfig(patch) {
     if (dailyChatScheduleChanged(this.config, patch)) this.config.dailyChatScheduleChangedAt = Date.now();
     const allowed = [
-      'baseUrl', 'model', 'verifiedVision', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
+      'baseUrl', 'model', 'verifiedVision', 'temperature', 'imageDetail',
       'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
       'userName', 'managerAvatar',
     ];
@@ -725,8 +727,16 @@ class Store {
       const first = thread.messages.find((m) => m.role === 'user') || thread.messages[0];
       if (first) thread.title = makeThreadTitle(first.content, DEFAULT_THREAD_TITLE);
     }
+    const previous = this.freechat.threads[thread.id];
+    const previousUpdatedAt = this.freechat.updatedAt;
     this.freechat.threads[thread.id] = normalizeThread(thread.id, thread);
-    this.saveFreeChat();
+    try {
+      this.saveFreeChat();
+    } catch (err) {
+      this.freechat.threads[thread.id] = previous;
+      this.freechat.updatedAt = previousUpdatedAt;
+      throw err;
+    }
     return clone(this.freechat.threads[thread.id]);
   }
 

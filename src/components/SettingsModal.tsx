@@ -45,7 +45,6 @@ export function SettingsModal({
     baseUrl: config.baseUrl,
     model: config.model,
     temperature: config.temperature,
-    maxPhotosPerRequest: config.maxPhotosPerRequest,
     imageDetail: config.imageDetail,
     systemPrompt: config.systemPrompt,
     userName: config.userName || '杂鱼',
@@ -499,22 +498,6 @@ export function SettingsModal({
 
                 <div className="settings-section">
                   <div className="block-title">看图与随机性</div>
-                  <label className="field">
-                    <span className="field-label">
-                      <span>每轮看图上限</span>
-                      <em>{form.maxPhotosPerRequest} 张</em>
-                    </span>
-                    <input
-                      className="range"
-                      type="range"
-                      min={1}
-                      max={10}
-                      step={1}
-                      value={form.maxPhotosPerRequest}
-                      onChange={(e) => set('maxPhotosPerRequest', Number(e.target.value))}
-                    />
-                    <p className="muted small">管理员根据话题点选照片。这个值限制每条回复最多能看几张。</p>
-                  </label>
                   <div className="field-row">
                     <label className="field">
                       <span className="field-label">

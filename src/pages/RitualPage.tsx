@@ -572,7 +572,7 @@ export function RitualPage({
               )}
 
               {busy && !streaming && (
-                <div className="msg assistant">
+                <div className="msg assistant is-typing">
                   <ManagerAvatar src={config?.managerAvatar} className="msg-avatar" />
                   <div className="msg-body">
                     <div className="msg-bubble typing-bubble"><TypingDots /></div>

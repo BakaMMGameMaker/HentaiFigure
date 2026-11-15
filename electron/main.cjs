@@ -378,11 +378,6 @@ function registerIpc() {
       if (!Number.isFinite(t) || t < 0 || t > 2) throw new Error('温度应在 0 到 2 之间。');
       clean.temperature = t;
     }
-    if (patch.maxPhotosPerRequest !== undefined) {
-      const n = Number(patch.maxPhotosPerRequest);
-      if (!Number.isFinite(n) || n < 1 || n > 10) throw new Error('每轮附送照片数应在 1 到 10 之间。');
-      clean.maxPhotosPerRequest = Math.round(n);
-    }
     if (patch.imageDetail !== undefined) {
       clean.imageDetail = patch.imageDetail === 'low' ? 'low' : 'high';
     }
@@ -561,7 +556,7 @@ function registerIpc() {
   ipcMain.handle('chat:free:new', (event, title) => ritual.freeNewThread(typeof title === 'string' ? title : undefined));
   ipcMain.handle('chat:free:rename', (event, { threadId, title } = {}) => ritual.freeRenameThread(String(threadId || ''), title));
   ipcMain.handle('chat:free:delete', (event, threadId) => ritual.freeDeleteThread(String(threadId || '')));
-  ipcMain.handle('chat:free:send', (event, { text, threadId } = {}) => ritual.sendFreeChatUserMessage(text, threadId));
+  ipcMain.handle('chat:free:send', (event, { text, threadId, images } = {}) => ritual.sendFreeChatUserMessage(text, threadId, images));
   ipcMain.handle('chat:free:generate', (event, { forceNew, threadId } = {}) => {
     if (ritual.freeChatBusy) return { started: false };
     const thread = threadId ? store.getThread(threadId) : store.ensureActiveThread();

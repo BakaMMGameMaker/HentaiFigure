@@ -9,7 +9,7 @@ export function createPhotoAccess(options: {
   photos: Photo[];
   history: ChatMessage[];
   labels: Record<string, string>;
-  config: { baseUrl: string; maxPhotosPerRequest: number; imageDetail: 'low' | 'high' };
+  config: { baseUrl: string; imageDetail: 'low' | 'high' };
   loadImage: (photo: Photo) => string | null;
 }): {
   names: string;

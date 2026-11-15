@@ -58,6 +58,7 @@ export interface ChatMessage {
   reasoning?: string;
   toolTrace?: { name: string; args: Record<string, unknown>; result: string }[];
   viewedPhotoIds?: string[];
+  images?: string[];
 }
 
 export interface ItemChange {
@@ -127,7 +128,6 @@ export interface Config {
   model: string;
   visionModelReady: boolean;
   temperature: number;
-  maxPhotosPerRequest: number;
   imageDetail: 'high' | 'low';
   systemPrompt: string;
   userName: string;
@@ -308,7 +308,7 @@ export interface HfApi {
     generate(sessionId: string): Promise<{ started: boolean }>;
     stop(sessionId: string): Promise<boolean>;
     freeState(): Promise<FreeChatState>;
-    freeSend(text: string, threadId?: string): Promise<{ message: ChatMessage; threadId: string }>;
+    freeSend(text: string, threadId?: string, images?: string[]): Promise<{ message: ChatMessage; threadId: string }>;
     freeGenerate(forceNew?: boolean, threadId?: string): Promise<{ started: boolean }>;
     freeStop(threadId?: string): Promise<boolean>;
     freeProactive(threadId?: string): Promise<{ message?: ChatMessage; skipped?: boolean; reason?: string; threadId?: string }>;

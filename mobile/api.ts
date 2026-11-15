@@ -4,6 +4,7 @@ import { Browser } from '@capacitor/browser';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import type { Character, Config, HfApi, Item, Photo, Shot, UpdateInfo } from '../src/types';
+import { loadImage, readFileAsDataUrl, resizeDataUrl } from '../src/image';
 import { MobileStore } from './store';
 import { MobileEngine } from './engine';
 import { exportSyncZip, importSyncZip } from './sync';
@@ -111,39 +112,6 @@ function normalizeItem(input: any, store: MobileStore): Item {
       lastInstigatedAt: (existing as any).lastInstigatedAt || null,
     } : {}),
   } as Item;
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error || new Error('读取图片失败'));
-    reader.readAsDataURL(file);
-  });
-}
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('图片解码失败'));
-    img.src = src;
-  });
-}
-
-function resizeDataUrl(img: HTMLImageElement, max: number, quality: number): string {
-  const ratio = Math.min(1, max / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
-  const w = Math.max(1, Math.round((img.naturalWidth || img.width) * ratio));
-  const h = Math.max(1, Math.round((img.naturalHeight || img.height) * ratio));
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('无法处理图片');
-  ctx.fillStyle = '#120b14';
-  ctx.fillRect(0, 0, w, h);
-  ctx.drawImage(img, 0, 0, w, h);
-  return canvas.toDataURL('image/jpeg', quality);
 }
 
 function squareAvatarDataUrl(img: HTMLImageElement): string {
@@ -376,11 +344,6 @@ export function installMobileApi() {
           if (!Number.isFinite(t) || t < 0 || t > 2) throw new Error('温度应在 0 到 2 之间。');
           clean.temperature = t;
         }
-        if (patch.maxPhotosPerRequest !== undefined) {
-          const n = Number(patch.maxPhotosPerRequest);
-          if (!Number.isFinite(n) || n < 1 || n > 10) throw new Error('每轮附送照片数应在 1 到 10 之间。');
-          clean.maxPhotosPerRequest = Math.round(n);
-        }
         if (patch.imageDetail !== undefined) clean.imageDetail = patch.imageDetail === 'low' ? 'low' : 'high';
         if (patch.systemPrompt !== undefined) clean.systemPrompt = String(patch.systemPrompt).slice(0, 30000);
         if (patch.userName !== undefined) {
@@ -487,7 +450,7 @@ export function installMobileApi() {
       },
       stop: async (sessionId: string) => { await ready; engine.stop(sessionId); return true; },
       freeState: async () => { await ready; return engine.freeChatState(); },
-      freeSend: async (text: string, threadId?: string) => { await ready; return engine.sendFreeChatUserMessage(text, threadId); },
+      freeSend: async (text, threadId, images) => { await ready; return engine.sendFreeChatUserMessage(text, threadId, images); },
       freeGenerate: async (forceNew?: boolean, threadId?: string) => {
         await ready;
         if (engine.freeChatBusy) return { started: false };

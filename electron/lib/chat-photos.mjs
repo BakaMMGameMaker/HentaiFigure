@@ -23,7 +23,6 @@ export function createPhotoAccess({ photos, history, labels, config, loadImage }
   const previousIds = new Set(history.flatMap((message) => message.viewedPhotoIds || []));
   const viewedIds = new Set();
   const supplementalParts = [];
-  const limit = Math.max(1, Math.min(10, Math.trunc(Number(config.maxPhotosPerRequest)) || 6));
   const nativeToolImages = isDeepSeekEndpoint(config.baseUrl);
   const detail = config.imageDetail === 'low' ? 'low' : 'high';
   const describe = (photo) => `${labels[photo.shot] || '照片'}${photo.caption ? `（${photo.caption}）` : ''}`;
@@ -34,7 +33,7 @@ export function createPhotoAccess({ photos, history, labels, config, loadImage }
     names,
     count: catalog.size,
     viewedIds,
-    instructions: `【当前藏品的照片清单】\n${names}\n每条回复最多查看 ${limit} 张。按话题使用 view_item_photos 点选，涉及外观细节时先查看对应的图。已查看的标记表示过去收到过图片，想核实画面时可以重看。`,
+    instructions: `【当前藏品的照片清单】\n${names}\n按话题使用 view_item_photos 点选，涉及外观细节时先查看对应的图。已查看的标记表示过去收到过图片，想核实画面时可以重看。`,
     view(args) {
       if (!Array.isArray(args?.photo_ids) || !args.photo_ids.length) {
         return { result: { error: '请提供清单中的 photo_ids。' } };
@@ -44,7 +43,6 @@ export function createPhotoAccess({ photos, history, labels, config, loadImage }
       const alreadyIncluded = [];
       const parts = [];
       for (const id of new Set(args.photo_ids)) {
-        if (viewedIds.size >= limit) break;
         if (viewedIds.has(id)) {
           alreadyIncluded.push(id);
           continue;
@@ -60,7 +58,7 @@ export function createPhotoAccess({ photos, history, labels, config, loadImage }
         parts.push({ type: 'text', text: `${id}：${describe(photo)}` });
         parts.push({ type: 'image_url', image_url: { url, detail } });
       }
-      const result = { photos, unavailable, alreadyIncluded, remaining: limit - viewedIds.size };
+      const result = { photos, unavailable, alreadyIncluded };
       if (!parts.length) return { result };
 
       const text = { type: 'text', text: JSON.stringify(result) };

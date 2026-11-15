@@ -104,13 +104,6 @@ export function HomePage({
             {greeting}
             <IconRefresh size={14} className="hero-reroll" />
           </button>
-          <p className="hero-sub">
-            {complete
-              ? '今天的份已经交上去了。余韵、灰尘和钱包，都明天再说。'
-              : inProgress
-                ? '上一轮还没结束，管理员在等你把话说完。'
-                : '擦拭 · 意淫 · 教唆。一次做完，今天才算数。'}
-          </p>
 
           <div className="hero-actions">
             <button

@@ -152,11 +152,6 @@ code {
   -webkit-app-region: drag;
   user-select: none;
 }
-.titlebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .brand-mark {
   width: 24px;
   height: 24px;
@@ -944,8 +939,6 @@ code {
 }
 .hero-reroll { color: var(--muted-2); opacity: 0.7; flex: 0 0 auto; }
 .hero-greeting:hover .hero-reroll { color: var(--rose); opacity: 1; }
-.hero-sub { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
-
 .hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 20px; }
 .cta {
   height: 48px;
@@ -1660,78 +1653,58 @@ button.stat:hover { background: var(--panel-hover); border-color: var(--border-s
   padding: 14px;
   border-right: 1px solid var(--border);
   background: rgba(14, 10, 18, 0.55);
-  overflow-y: auto;
+  min-height: 0;
 }
-.side-block { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
-.side-note { font-size: 11px; color: var(--muted-2); display: flex; align-items: center; gap: 5px; }
-
-.mini-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.mini-count {
-  padding: 8px 6px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border);
-  text-align: center;
-}
-.mini-count strong { display: block; font-size: 16px; }
-.mini-count small { font-size: 10.5px; color: var(--muted); }
-.mini-count.tone-owned strong { color: var(--rose); }
-.mini-count.tone-pending strong { color: var(--gold); }
-.mini-count.tone-watching strong { color: var(--violet); }
-
-.side-recent {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px;
-  border-radius: 9px;
-  text-align: left;
-}
-.side-recent:hover { background: rgba(255, 255, 255, 0.05); }
-.side-recent img { width: 36px; height: 36px; border-radius: 7px; object-fit: cover; flex: 0 0 auto; }
-.side-recent span { min-width: 0; display: flex; flex-direction: column; }
-.side-recent strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.side-recent small { font-size: 11px; color: var(--muted-2); }
 
 /* Thread list */
 .thread-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .thread-head-actions { display: flex; align-items: center; gap: 6px; }
-.thread-list-wrap { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-.thread-list { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 320px; }
+.thread-list { display: flex; flex: 1; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; }
+.thread-group { flex: 0 0 auto; }
 .thread-group-label { font-size: 10.5px; color: var(--muted-2); padding: 2px 6px; }
 .thread-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 9px;
+  padding-right: 9px;
   border-radius: 10px;
-  cursor: pointer;
   border: 1px solid transparent;
 }
 .thread-item:hover { background: rgba(255, 255, 255, 0.045); }
 .thread-item.active { background: var(--rose-soft); border-color: rgba(255, 111, 156, 0.3); }
-.thread-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.thread-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 8px 0 8px 9px; text-align: left; border-radius: 9px; }
+.thread-item-body span { width: 100%; }
 .thread-title { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .thread-preview { font-size: 11px; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.thread-more { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--muted); }
+.thread-more { width: 26px; height: 26px; flex: 0 0 auto; border-radius: 7px; display: grid; place-items: center; color: var(--muted); }
+@media (hover: hover) and (pointer: fine) {
+  .thread-more { opacity: 0; pointer-events: none; }
+  .thread-item:hover .thread-more,
+  .thread-item:focus-within .thread-more,
+  .thread-more[aria-expanded="true"] { opacity: 1; pointer-events: auto; }
+}
+@media (pointer: coarse) {
+  .thread-more { width: 36px; height: 36px; }
+}
 .thread-more:hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
 .thread-empty { padding: 14px 6px; font-size: 12px; color: var(--muted); }
 
-.thread-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 9px;
+.thread-menu {
+  position: fixed;
+  z-index: 230;
+  width: 126px;
+  padding: 4px;
+  border-radius: 10px;
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
-  font-size: 11.5px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
 }
-.thread-actions-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
-.thread-actions button { display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border-radius: 6px; }
-.thread-actions button:hover { background: rgba(255, 255, 255, 0.08); }
-.thread-actions button.danger { color: var(--danger); }
+.thread-menu button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; text-align: left; }
+.thread-menu button:hover,
+.thread-menu button:focus-visible { background: rgba(255, 255, 255, 0.08); }
+.thread-menu .danger { color: var(--danger); }
+.thread-rename .input { width: 100%; margin-top: 12px; }
 
 .drawer-mask {
   position: fixed;
@@ -1750,7 +1723,6 @@ button.stat:hover { background: var(--panel-hover); border-color: var(--border-s
   flex-direction: column;
   gap: 10px;
 }
-.drawer .thread-list { max-height: none; flex: 1; }
 
 /* Chat Main */
 .chat-main {
@@ -1840,10 +1812,12 @@ button.stat:hover { background: var(--panel-hover); border-color: var(--border-s
   gap: 9px;
   max-width: min(720px, 88%);
 }
+.msg.assistant { align-items: flex-start; }
+.msg.assistant:not(.is-typing) .msg-avatar { margin-top: 19px; }
 .msg.user { align-self: flex-end; flex-direction: row-reverse; }
 .msg-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .msg.user .msg-body { align-items: flex-end; }
-.msg-who { font-size: 11px; color: var(--muted-2); padding: 0 4px; }
+.msg-who { font-size: 11px; line-height: 16px; color: var(--muted-2); padding: 0 4px; }
 .msg-bubble {
   padding: 10px 14px;
   border-radius: 16px;
@@ -1858,6 +1832,9 @@ button.stat:hover { background: var(--panel-hover); border-color: var(--border-s
   background: linear-gradient(135deg, rgba(255, 111, 156, 0.24), rgba(177, 140, 255, 0.16));
   border-color: rgba(255, 111, 156, 0.35);
 }
+.message-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.message-images button { max-width: min(220px, 100%); border-radius: 12px; overflow: hidden; }
+.message-images img { display: block; max-width: 100%; max-height: 180px; object-fit: contain; }
 .stream-caret {
   display: inline-block;
   width: 2px;
@@ -1923,6 +1900,27 @@ button.stat:hover { background: var(--panel-hover); border-color: var(--border-s
   line-height: 1.5;
 }
 .is-narrow .composer textarea { font-size: 16px; }
+.chat-composer { flex-direction: column; align-items: stretch; gap: 3px; padding: 8px; }
+.chat-composer textarea { flex: 0 0 auto; width: 100%; padding: 6px 5px; }
+.composer-tools { display: flex; align-items: center; gap: 8px; }
+.composer-upload { width: 38px; height: 38px; }
+.composer-tools .send-btn { margin-left: auto; }
+.composer-reading { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
+.composer-images { display: flex; gap: 8px; overflow-x: auto; padding: 2px; }
+.composer-image { position: relative; flex: 0 0 auto; }
+.composer-image img { display: block; width: 60px; height: 60px; object-fit: cover; border-radius: 8px; }
+.composer-image button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(10, 7, 13, 0.88);
+  color: var(--text);
+}
 .send-btn {
   width: 38px;
   height: 38px;

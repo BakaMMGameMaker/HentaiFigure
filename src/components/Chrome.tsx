@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import {
-  IconBloom, IconMinus, IconPlus, IconSettings, IconSquare, IconX,
+  IconMinus, IconPlus, IconSettings, IconSquare, IconX,
   IconHome, IconGallery, IconCalendar, IconBook, IconChat, IconDownload,
 } from '../icons';
 import { cx } from '../utils';
@@ -27,10 +27,7 @@ export function TitleBar({
 }) {
   return (
     <header className="titlebar">
-      <div className="titlebar-brand">
-        <span className="brand-mark"><IconBloom size={15} /></span>
-        <span className="brand-name">HentaiFigure</span>
-      </div>
+      <span className="brand-name">HentaiFigure</span>
       <div className="titlebar-drag" />
       {updateAvailable && (
         <button type="button" className="titlebar-update" onClick={onUpdateClick}>
@@ -126,7 +123,6 @@ export function MobileBar({
 }) {
   return (
     <header className="mobilebar">
-      <span className="brand-mark"><IconBloom size={15} /></span>
       <span className="mobilebar-title">{title}</span>
       {updateAvailable && (
         <button type="button" className="titlebar-update" onClick={onUpdateClick}>

@@ -116,7 +116,11 @@ export function readMemory({ session, thread, getItemName, phaseLabel, dateKey, 
   const record = session ? sessionRecord(session, phaseLabel) : thread && threadRecord(thread, getItemName, dateKey);
   if (!record) return { error: '没有这次对话记录' };
   const { messages, summary, timestamp, ...metadata } = record;
-  const transcript = messages.map((message) => `${message.role === 'user' ? userName : '管理员'}：${message.content}`).join('\n');
+  const transcript = messages.map((message) => {
+    const name = message.role === 'user' ? userName : '管理员';
+    const attachmentNote = message.images?.length ? `[图片 ${message.images.length} 张] ` : '';
+    return `${name}：${attachmentNote}${message.content}`;
+  }).join('\n');
   const offset = asOffset(args?.offset);
   const end = offset + 4000;
   return {

@@ -383,7 +383,6 @@ export default function App() {
               apiKeySet={Boolean(config?.apiKeySet)}
               narrow={narrow}
               onOpenSettings={() => openSettings('api')}
-              onOpenMemory={() => { setMemoryItemId(null); setView('memory'); }}
               onOpenItem={(item) => setDetailItemId(item.id)}
               onBack={() => setView('home')}
               onStateChanged={refreshFreeChat}

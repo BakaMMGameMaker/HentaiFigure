@@ -64,7 +64,7 @@ contextBridge.exposeInMainWorld('hf', {
     generate: (sessionId) => ipcRenderer.invoke('chat:generate', sessionId),
     stop: (sessionId) => ipcRenderer.invoke('chat:stop', sessionId),
     freeState: () => ipcRenderer.invoke('chat:free:state'),
-    freeSend: (text, threadId) => ipcRenderer.invoke('chat:free:send', { text, threadId }),
+    freeSend: (text, threadId, images) => ipcRenderer.invoke('chat:free:send', { text, threadId, images }),
     freeGenerate: (forceNew, threadId) => ipcRenderer.invoke('chat:free:generate', { forceNew, threadId }),
     freeStop: (threadId) => ipcRenderer.invoke('chat:free:stop', threadId),
     freeProactive: (threadId) => ipcRenderer.invoke('chat:free:proactive', threadId),

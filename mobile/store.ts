@@ -17,7 +17,6 @@ export interface MobileConfig {
   model: string;
   verifiedVision?: string;
   temperature: number;
-  maxPhotosPerRequest: number;
   imageDetail: 'high' | 'low';
   systemPrompt: string;
   prompts: Record<string, string>;
@@ -49,7 +48,6 @@ const DEFAULT_CONFIG: MobileConfig = {
   baseUrl: DEEPSEEK_URL,
   model: DEFAULT_VISION_MODEL,
   temperature: 1.3,
-  maxPhotosPerRequest: 6,
   imageDetail: 'high',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   prompts: {},
@@ -124,7 +122,7 @@ export function makeThreadTitle(text: string | undefined, fallback = DEFAULT_THR
 function threadPreview(thread: ChatThread): string {
   const last = thread.messages[thread.messages.length - 1];
   if (!last) return '还没有开口。';
-  return String(last.content || '').replace(/\s+/g, ' ').slice(0, 90);
+  return String(last.content || '').replace(/\s+/g, ' ').slice(0, 90) || (last.images?.length ? '[图片]' : '');
 }
 
 export function threadSummary(thread: ChatThread): ChatThreadSummary {
@@ -212,6 +210,10 @@ export class MobileStore {
     this.config = { ...DEFAULT_CONFIG, ...(config || {}) };
     const model = migrateVisionModel(this.config);
     let configChanged = model !== this.config.model;
+    if (Object.hasOwn(this.config, 'maxPhotosPerRequest')) {
+      Reflect.deleteProperty(this.config, 'maxPhotosPerRequest');
+      configChanged = true;
+    }
     this.config.model = model;
     if (!this.config.prompts || typeof this.config.prompts !== 'object' || Array.isArray(this.config.prompts)) {
       this.config.prompts = {};
@@ -315,7 +317,6 @@ export class MobileStore {
       model: this.config.model,
       visionModelReady: isVisionReady(this.config),
       temperature: this.config.temperature,
-      maxPhotosPerRequest: this.config.maxPhotosPerRequest,
       imageDetail: this.config.imageDetail,
       systemPrompt: this.promptValues().persona || '',
       userName: this.config.userName || '杂鱼',
@@ -385,7 +386,7 @@ export class MobileStore {
   async updateConfig(patch: Partial<MobileConfig> & { apiKey?: string; clearApiKey?: boolean }) {
     if (dailyChatScheduleChanged(this.config, patch)) this.config.dailyChatScheduleChangedAt = Date.now();
     const allowed: (keyof MobileConfig)[] = [
-      'baseUrl', 'model', 'verifiedVision', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
+      'baseUrl', 'model', 'verifiedVision', 'temperature', 'imageDetail',
       'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
       'userName', 'managerAvatar',
     ];
@@ -655,10 +656,19 @@ export class MobileStore {
       const first = thread.messages.find((m) => m.role === 'user') || thread.messages[0];
       if (first) thread.title = makeThreadTitle(first.content);
     }
-    this.freechat.threads[thread.id] = normalizeThread(thread.id, thread)!;
-    this.freechat.updatedAt = Date.now();
-    await this.saveFreeChat();
-    return this.getThread(thread.id)!;
+    const previous = this.freechat.threads[thread.id];
+    const previousUpdatedAt = this.freechat.updatedAt;
+    const next = normalizeThread(thread.id, thread)!;
+    this.freechat.threads[thread.id] = next;
+    this.freechat.updatedAt = thread.updatedAt;
+    try {
+      await this.saveFreeChat();
+    } catch (err) {
+      if (this.freechat.threads[thread.id] === next) this.freechat.threads[thread.id] = previous;
+      if (this.freechat.updatedAt === next.updatedAt) this.freechat.updatedAt = previousUpdatedAt;
+      throw err;
+    }
+    return this.getThread(thread.id);
   }
 
   async renameThread(id: string, title: string) {

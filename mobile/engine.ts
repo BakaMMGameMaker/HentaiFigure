@@ -18,6 +18,7 @@ import {
 } from './ai';
 
 import { PROMPT_DEFAULTS, renderPrompt } from '../src/prompts';
+import { chatMessageContent, validateChatImages } from '../electron/lib/chat-attachments.mjs';
 import { VIEW_ITEM_PHOTOS, createPhotoAccess } from '../electron/lib/chat-photos.mjs';
 import { LIST_COLLECTION, MEMORY_LOOKUP_TOOLS, collectionPage, readMemory, searchMemory } from '../electron/lib/chat-memory.mjs';
 import { assertVisionReady, isVisionReady } from '../electron/lib/vision-config.mjs';
@@ -974,7 +975,8 @@ export class MobileEngine {
     const history = (thread.messages || []).slice(-40);
     const system = this.buildFreeChatSystemPrompt(thread);
     const messages: any[] = [{ role: 'system', content: photoAccess ? `${system}\n\n${photoAccess.instructions}` : system }];
-    for (const m of history) messages.push({ role: m.role, content: m.content });
+    const detail = this.store.config.imageDetail === 'low' ? 'low' : 'high';
+    for (const m of history) messages.push({ role: m.role, content: chatMessageContent(m, detail) });
     if (openingInstruction) {
       const note = photoAccess ? this.prompt('freechat.photoNote', { names: photoAccess.names }) : '';
       messages.push({ role: 'user', content: note ? `${openingInstruction}\n\n${note}` : openingInstruction });
@@ -996,17 +998,20 @@ export class MobileEngine {
     return messages;
   }
 
-  async sendFreeChatUserMessage(text: string, threadId?: string) {
+  async sendFreeChatUserMessage(text: string, threadId?: string, images: string[] = []) {
     if (this.freeChatBusy) throw new Error('管理员还在说话，等一句说完。');
     const content = String(text || '').trim();
-    if (!content) throw new Error('说点什么再发。');
+    const attachments = validateChatImages(images);
+    if (!content && !attachments.length) throw new Error('写点什么或添加图片再发。');
     if (content.length > 4000) throw new Error('一次最多 4000 字。');
     const thread = threadId ? this.store.getThread(threadId) : await this.store.ensureActiveThread();
     if (!thread) throw new Error('这个对话不在了。');
     const message = msg('user', content);
+    if (attachments.length) message.images = attachments;
     const updated = await this.store.appendThreadMessage(thread.id, message);
+    if (!updated) throw new Error('这个对话不在了。');
     this.emit({ type: 'free:threads', threads: this.store.listThreadSummaries(), threadId: thread.id, channel: 'freechat' });
-    return { message, threadId: (updated || thread).id };
+    return { message, threadId: updated.id };
   }
 
   stopFreeChat(threadId?: string) {

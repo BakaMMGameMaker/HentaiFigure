@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Character, ChatMessage, ChatThreadSummary, Config, FreeChatState, Item } from '../types';
+import { itemCover, photoUrl } from '../constants';
+import { loadImage, readFileAsDataUrl, resizeDataUrl } from '../image';
+import { cleanError, cx, groupThreads } from '../utils';
+import { ImageLightbox, ManagerAvatar, Modal, Spinner, TypingDots, confirmDialog } from '../components/ui';
 import {
-  STATUS_META, formatDateCN, formatMoney, itemCover, photoUrl,
-} from '../constants';
-import { cleanError, cx, formatTime, groupThreads } from '../utils';
-import { ManagerAvatar, Spinner, TypingDots, confirmDialog } from '../components/ui';
-import {
-  IconAlert, IconArrowLeft, IconBook, IconChat, IconChevronRight, IconClock, IconHeart, IconMore,
+  IconAlert, IconArrowLeft, IconChat, IconChevronRight, IconClock, IconImage, IconMore,
   IconPencil, IconPlus, IconSend, IconSettings, IconSparkles, IconStop, IconTrash, IconX,
 } from '../icons';
 
@@ -20,66 +19,107 @@ type ThreadListProps = {
 };
 
 function ThreadList({ threads, activeId, onSelect, onRename, onDelete }: ThreadListProps) {
-  const [menuId, setMenuId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ threadId: string; anchor: HTMLButtonElement } | null>(null);
+  const menuId = useId();
+  const menuRef = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => groupThreads(threads), [threads]);
-  const menuThread = menuId ? threads.find((t) => t.id === menuId) || null : null;
+  const menuThread = menu && threads.find((thread) => thread.id === menu.threadId);
+  const menuOpen = Boolean(menuThread);
 
-  useEffect(() => {
-    if (!menuId) return;
-    const timer = window.setTimeout(() => setMenuId(null), 20000);
-    return () => window.clearTimeout(timer);
-  }, [menuId]);
+  useLayoutEffect(() => {
+    const popup = menuRef.current;
+    if (!menu || !popup) return;
+    const { anchor } = menu;
+    const rect = anchor.getBoundingClientRect();
+    const padding = 8;
+    const gap = 4;
+    const left = Math.max(padding, Math.min(rect.right, window.innerWidth - padding) - popup.offsetWidth);
+    const top = rect.bottom + gap + popup.offsetHeight <= window.innerHeight - padding
+      ? rect.bottom + gap
+      : Math.max(padding, rect.top - gap - popup.offsetHeight);
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
+    popup.querySelector('button')?.focus({ preventScroll: true });
+
+    const close = () => setMenu(null);
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      if (!popup.contains(event.target) && !anchor.contains(event.target)) close();
+    };
+    const onFocusIn = (event: FocusEvent) => {
+      if (event.target instanceof Node && !popup.contains(event.target) && !anchor.contains(event.target)) close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      anchor.focus({ preventScroll: true });
+      close();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [menu, menuOpen]);
 
   if (!threads.length) {
     return <div className="thread-empty">还没有对话。点上面的「新建」开一段。</div>;
   }
 
   return (
-    <div className="thread-list-wrap">
-      {menuThread && (
-        <div className="thread-actions">
-          <span className="thread-actions-title" title={menuThread.title}>{menuThread.title}</span>
-          <button type="button" onClick={() => { setMenuId(null); onRename(menuThread); }}>
-            <IconPencil size={13} /> 重命名
-          </button>
-          <button type="button" className="danger" onClick={() => { setMenuId(null); onDelete(menuThread); }}>
-            <IconTrash size={13} /> 删除
-          </button>
-          <button type="button" className="icon-btn sm" onClick={() => setMenuId(null)} aria-label="收起">
-            <IconX size={13} />
-          </button>
-        </div>
-      )}
-      <div className="thread-list">
-        {groups.map((group) => (
-          <div className="thread-group" key={group.key}>
-            <div className="thread-group-label">{group.label}</div>
-            {group.threads.map((thread) => (
-              <div
-                key={thread.id}
-                className={cx('thread-item', thread.id === activeId && 'active')}
-                onClick={() => onSelect(thread.id)}
-              >
-                <div className="thread-item-body">
+    <div className="thread-list">
+      {groups.map((group) => (
+        <div className="thread-group" key={group.key}>
+          <div className="thread-group-label">{group.label}</div>
+          {group.threads.map((thread) => {
+            const isOpen = menuThread?.id === thread.id;
+            return (
+              <div key={thread.id} className={cx('thread-item', thread.id === activeId && 'active')}>
+                <button
+                  type="button"
+                  className="thread-item-body"
+                  aria-current={thread.id === activeId || undefined}
+                  onClick={() => onSelect(thread.id)}
+                >
                   <span className="thread-title">{thread.title}</span>
                   <span className="thread-preview">{thread.preview}</span>
-                </div>
+                </button>
                 <button
                   type="button"
                   className="thread-more"
-                  title="更多"
+                  aria-label={`「${thread.title}」的更多操作`}
+                  aria-expanded={isOpen}
+                  aria-controls={isOpen ? menuId : undefined}
                   onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuId((prev) => (prev === thread.id ? null : thread.id));
+                    const anchor = event.currentTarget;
+                    setMenu(isOpen ? null : { threadId: thread.id, anchor });
                   }}
                 >
                   <IconMore size={14} />
                 </button>
               </div>
-            ))}
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      ))}
+      {menuThread && createPortal(
+        <div id={menuId} ref={menuRef} className="thread-menu">
+          <button type="button" onClick={() => { setMenu(null); onRename(menuThread); }}>
+            <IconPencil size={14} /> 重命名
+          </button>
+          <button type="button" className="danger" onClick={() => { setMenu(null); onDelete(menuThread); }}>
+            <IconTrash size={14} /> 删除
+          </button>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
@@ -92,7 +132,6 @@ export function ChatPage({
   apiKeySet,
   narrow,
   onOpenSettings,
-  onOpenMemory,
   onOpenItem,
   onBack,
   onStateChanged,
@@ -106,7 +145,6 @@ export function ChatPage({
   apiKeySet: boolean;
   narrow: boolean;
   onOpenSettings: () => void;
-  onOpenMemory: () => void;
   onOpenItem: (item: Item) => void;
   onBack: () => void;
   onStateChanged: () => void | Promise<void>;
@@ -122,12 +160,21 @@ export function ChatPage({
   const [error, setError] = useState('');
   const [input, setInput] = useState('');
   const [loaded, setLoaded] = useState(false);
-  const [lastProactiveAt, setLastProactiveAt] = useState<number | null>(null);
-  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<ChatThreadSummary | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [renameError, setRenameError] = useState('');
+  const [attachments, setAttachments] = useState<{ id: number; name: string; src: string }[]>([]);
+  const [readingImages, setReadingImages] = useState(0);
+  const [sending, setSending] = useState(false);
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const attachmentIdRef = useRef(0);
+  const pendingImagesRef = useRef(0);
+  const sendingRef = useRef(false);
   const stickRef = useRef(true);
   const startedRef = useRef(false);
   const activeIdRef = useRef('');
@@ -148,7 +195,6 @@ export function ChatPage({
     activeIdRef.current = state.activeId || '';
     setMessages(state.messages || []);
     setBusy(state.busy);
-    setLastProactiveAt(state.lastProactiveAt || null);
     setStreaming('');
     setToolStatus('');
     setError('');
@@ -236,7 +282,6 @@ export function ChatPage({
           break;
         case 'chat:done': {
           const message = event.message as ChatMessage;
-          if (typeof event.lastProactiveAt === 'number') setLastProactiveAt(event.lastProactiveAt);
           if (isActive) {
             setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
             setStreaming('');
@@ -279,7 +324,7 @@ export function ChatPage({
   }, []);
 
   useEffect(() => {
-    if (!requestedThreadId || requestedThreadId === activeIdRef.current) return;
+    if (sending || !requestedThreadId || requestedThreadId === activeIdRef.current) return;
     const token = switchTokenRef.current + 1;
     switchTokenRef.current = token;
     window.hf.chat.freeSelect(requestedThreadId)
@@ -296,7 +341,7 @@ export function ChatPage({
       })
       .catch((err) => setError(cleanError(err)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedThreadId]);
+  }, [requestedThreadId, sending]);
 
   useEffect(() => {
     if (!stickRef.current) return;
@@ -313,6 +358,7 @@ export function ChatPage({
   }, [input]);
 
   const selectThread = async (threadId: string) => {
+    if (sendingRef.current) return;
     if (!threadId || threadId === activeIdRef.current) {
       setDrawerOpen(false);
       return;
@@ -336,6 +382,8 @@ export function ChatPage({
   };
 
   const newThread = async () => {
+    if (sendingRef.current) return;
+    switchTokenRef.current += 1;
     setDrawerOpen(false);
     try {
       const result = await window.hf.chat.freeNew();
@@ -353,21 +401,24 @@ export function ChatPage({
   };
 
   const beginRename = (thread: ChatThreadSummary) => {
-    setRenamingId(thread.id);
+    setRenaming(thread);
     setRenameValue(thread.title);
+    setRenameError('');
   };
 
   const commitRename = async () => {
-    const id = renamingId;
     const title = renameValue.trim();
-    setRenamingId(null);
-    if (!id || !title) return;
+    if (!renaming || !title || savingTitle) return;
+    setSavingTitle(true);
+    setRenameError('');
     try {
-      const next = await window.hf.chat.freeRename(id, title);
-      setThreads(next);
+      setThreads(await window.hf.chat.freeRename(renaming.id, title));
+      setRenaming(null);
       await onStateChanged();
     } catch (err) {
-      setError(cleanError(err));
+      setRenameError(cleanError(err));
+    } finally {
+      setSavingTitle(false);
     }
   };
 
@@ -378,7 +429,7 @@ export function ChatPage({
       confirmText: '删除',
       danger: true,
     });
-    if (!ok) return;
+    if (!ok || sendingRef.current) return;
     try {
       const result = await window.hf.chat.freeDelete(thread.id);
       applyState(result.state);
@@ -389,28 +440,58 @@ export function ChatPage({
     }
   };
 
+  const addImages = async (files: File[]) => {
+    if (!files.length || sendingRef.current) return;
+    pendingImagesRef.current += 1;
+    setReadingImages(pendingImagesRef.current);
+    const images: typeof attachments = [];
+    try {
+      for (const file of files) {
+        const name = file.name || '剪贴板图片';
+        try {
+          if (file.size > 60 * 1024 * 1024) throw new Error('单张图片不能超过 60MB。');
+          const image = await loadImage(await readFileAsDataUrl(file));
+          images.push({ id: ++attachmentIdRef.current, name, src: resizeDataUrl(image, 1400, 0.84) });
+        } catch (err) {
+          toast(`${name}：${cleanError(err)}`, 'error');
+        }
+      }
+      setAttachments((current) => [...current, ...images]);
+    } finally {
+      pendingImagesRef.current -= 1;
+      setReadingImages(pendingImagesRef.current);
+    }
+  };
+
   const send = async () => {
     const text = input.trim();
-    if (!text || busy) return;
+    if ((!text && !attachments.length) || busy || !loaded || pendingImagesRef.current || sendingRef.current) return;
+    const threadAtSend = activeIdRef.current;
+    sendingRef.current = true;
+    setSending(true);
     setError('');
     try {
-      const result = await window.hf.chat.freeSend(text, activeId || undefined);
-      if (result.threadId && result.threadId !== activeIdRef.current) {
+      const result = await window.hf.chat.freeSend(text, threadAtSend || undefined, attachments.map((image) => image.src));
+      setInput('');
+      setAttachments([]);
+      if (activeIdRef.current === threadAtSend) {
         activeIdRef.current = result.threadId;
         setActiveId(result.threadId);
+        setMessages((current) => current.some((message) => message.id === result.message.id)
+          ? current
+          : [...current, result.message]);
+        stickRef.current = true;
+        setStreaming('');
+        startedRef.current = false;
       }
-      setMessages((prev) => [...prev, result.message]);
-      setInput('');
-      setBusy(true);
-      setStreaming('');
-      startedRef.current = false;
-      const started = await window.hf.chat.freeGenerate(false, result.threadId || activeId);
-      if (!started.started) setBusy(false);
-      const state = await window.hf.chat.freeState();
-      setThreads(state.threads || []);
+      const started = await window.hf.chat.freeGenerate(false, result.threadId);
+      if (!started.started && activeIdRef.current === result.threadId) setBusy(false);
     } catch (err) {
       setError(cleanError(err));
       setBusy(false);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
   };
 
@@ -449,12 +530,6 @@ export function ChatPage({
     }
   };
 
-  const counts = {
-    owned: items.filter((i) => i.status === 'owned').length,
-    pending: items.filter((i) => i.status === 'pending').length,
-    watching: items.filter((i) => i.status === 'watching').length,
-  };
-  const recent = items.slice(0, 3);
   const last = messages[messages.length - 1];
   const activeThread = threads.find((t) => t.id === activeId) || null;
   const activeItem = activeThread?.itemId ? items.find((i) => i.id === activeThread.itemId) || null : null;
@@ -479,23 +554,6 @@ export function ChatPage({
         </div>
       </div>
 
-      {renamingId ? (
-        <div className="thread-rename">
-          <input
-            className="input input-sm"
-            value={renameValue}
-            autoFocus
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commitRename();
-              if (e.key === 'Escape') setRenamingId(null);
-            }}
-            onBlur={() => void commitRename()}
-            maxLength={60}
-          />
-        </div>
-      ) : null}
-
       <ThreadList
         threads={threads}
         activeId={activeId}
@@ -509,50 +567,7 @@ export function ChatPage({
   return (
     <div className="chat-shell">
       {!narrow && (
-        <aside className="chat-side">
-          {threadPanel(false)}
-
-          <div className="side-block">
-            <div className="block-title">仓库现状</div>
-            <div className="mini-counts">
-              {(['owned', 'pending', 'watching'] as const).map((status) => (
-                <div key={status} className={cx('mini-count', `tone-${status}`)}>
-                  <strong>{counts[status]}</strong>
-                  <small>{STATUS_META[status].label}</small>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="side-block">
-            <div className="block-title">她的记忆</div>
-            <p className="muted small">管理员可以在聊天里翻阅全部上贡记录，也可以由你主动打开记忆库。</p>
-            <button type="button" className="link" onClick={onOpenMemory}>
-              <IconBook size={13} /> 打开记忆库 <IconChevronRight size={12} />
-            </button>
-          </div>
-
-          {recent.length > 0 && (
-            <div className="side-block">
-              <div className="block-title">最近摆弄的</div>
-              {recent.map((item) => (
-                <button type="button" className="side-recent" key={item.id} onClick={() => onOpenItem(item)}>
-                  <img src={photoUrl(itemCover(item), true)} alt="" loading="lazy" />
-                  <span>
-                    <strong>{item.name}</strong>
-                    <small>{formatMoney(item.purchasePrice ?? item.originalPrice)}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {lastProactiveAt && (
-            <div className="side-note">
-              <IconHeart size={12} /> 上次主动：{formatDateCN(formatTime(lastProactiveAt).slice(0, 10))} {formatTime(lastProactiveAt).slice(11)}
-            </div>
-          )}
-        </aside>
+        <aside className="chat-side">{threadPanel(false)}</aside>
       )}
 
       {narrow && drawerOpen && createPortal(
@@ -636,15 +651,34 @@ export function ChatPage({
             </div>
           ) : null}
 
-          {messages.map((message) => (
-            <div key={message.id} className={cx('msg', message.role)}>
-              {message.role === 'assistant' && <ManagerAvatar src={avatar} className="msg-avatar" />}
-              <div className="msg-body">
-                <div className="msg-who">{message.role === 'assistant' ? '管理员' : userName}</div>
-                <div className="msg-bubble">{message.content}</div>
+          {messages.map((message) => {
+            const images = Array.isArray(message.images)
+              ? message.images.filter((src) => typeof src === 'string' && src.startsWith('data:image/jpeg;base64,'))
+              : [];
+            return (
+              <div key={message.id} className={cx('msg', message.role)}>
+                {message.role === 'assistant' && <ManagerAvatar src={avatar} className="msg-avatar" />}
+                <div className="msg-body">
+                  <div className="msg-who">{message.role === 'assistant' ? '管理员' : userName}</div>
+                  {images.length > 0 && (
+                    <div className="message-images">
+                      {images.map((src, index) => (
+                        <button
+                          type="button"
+                          key={index}
+                          onClick={() => setLightbox({ images, index })}
+                          aria-label={`查看图片 ${index + 1}`}
+                        >
+                          <img src={src} alt="" loading="lazy" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {message.content && <div className="msg-bubble">{message.content}</div>}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {streaming && (
             <div className="msg assistant">
@@ -660,7 +694,7 @@ export function ChatPage({
           )}
 
           {busy && !streaming && (
-            <div className="msg assistant">
+            <div className="msg assistant is-typing">
               <ManagerAvatar src={avatar} className="msg-avatar" />
               <div className="msg-body">
                 <div className="msg-bubble typing-bubble"><TypingDots /></div>
@@ -682,7 +716,24 @@ export function ChatPage({
         </div>
 
         <div className="composer-wrap">
-          <div className="composer">
+          <div className="composer chat-composer">
+            {attachments.length > 0 && (
+              <div className="composer-images">
+                {attachments.map((image) => (
+                  <div key={image.id} className="composer-image" title={image.name}>
+                    <img src={image.src} alt={image.name} />
+                    <button
+                      type="button"
+                      disabled={sending}
+                      onClick={() => setAttachments((current) => current.filter((item) => item.id !== image.id))}
+                      aria-label={`移除 ${image.name}`}
+                    >
+                      <IconX size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <textarea
               ref={inputRef}
               value={input}
@@ -693,19 +744,57 @@ export function ChatPage({
                   void send();
                 }
               }}
+              onPaste={(e) => {
+                const images = Array.from(e.clipboardData.files).filter((file) => file.type.startsWith('image/'));
+                if (!images.length) return;
+                e.preventDefault();
+                void addImages(images);
+              }}
               placeholder={busy ? '等管理员说完…' : '和管理员说点什么…'}
-              disabled={busy}
+              disabled={busy || sending}
               rows={1}
             />
-            {busy ? (
-              <button type="button" className="send-btn stop" onClick={stop} title="让她停下" aria-label="停下">
-                <IconStop size={16} />
+            <div className="composer-tools">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => {
+                  const files = Array.from(e.currentTarget.files || []);
+                  e.currentTarget.value = '';
+                  void addImages(files);
+                }}
+              />
+              <button
+                type="button"
+                className="icon-btn composer-upload"
+                onClick={() => fileRef.current?.click()}
+                disabled={busy || sending}
+                title="上传图片"
+                aria-label="上传图片"
+              >
+                <IconImage size={18} />
               </button>
-            ) : (
-              <button type="button" className="send-btn" onClick={() => void send()} disabled={!input.trim()} title="发送" aria-label="发送">
-                <IconSend size={16} />
-              </button>
-            )}
+              {readingImages > 0 && <span className="composer-reading" role="status"><Spinner size={13} /> 正在读取图片</span>}
+              {busy ? (
+                <button type="button" className="send-btn stop" onClick={stop} title="让她停下" aria-label="停下">
+                  <IconStop size={16} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="send-btn"
+                  onClick={() => void send()}
+                  disabled={!loaded || sending || readingImages > 0 || (!input.trim() && !attachments.length)}
+                  title="发送"
+                  aria-label="发送"
+                >
+                  <IconSend size={16} />
+                </button>
+              )}
+            </div>
           </div>
           <div className="composer-foot">
             <span><IconClock size={12} /> {scheduleText}</span>
@@ -713,6 +802,41 @@ export function ChatPage({
           </div>
         </div>
       </section>
+
+      {renaming && (
+        <Modal
+          size="sm"
+          titleId="thread-rename-title"
+          onClose={() => { if (!savingTitle) setRenaming(null); }}
+        >
+          <form className="confirm thread-rename" onSubmit={(event) => { event.preventDefault(); void commitRename(); }}>
+            <h3 id="thread-rename-title">重命名对话</h3>
+            <input
+              className="input"
+              aria-label="对话名称"
+              value={renameValue}
+              onChange={(event) => setRenameValue(event.target.value)}
+              onFocus={(event) => event.target.select()}
+              maxLength={60}
+              disabled={savingTitle}
+              autoFocus
+            />
+            {renameError && <p className="chat-error" role="alert">{renameError}</p>}
+            <div className="confirm-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setRenaming(null)} disabled={savingTitle}>取消</button>
+              <button type="submit" className="btn btn-primary" disabled={savingTitle || !renameValue.trim()}>保存</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {lightbox && (
+        <ImageLightbox
+          images={lightbox.images.map((src, index) => ({ src, caption: `聊天图片 ${index + 1}` }))}
+          startIndex={lightbox.index}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   );
 }

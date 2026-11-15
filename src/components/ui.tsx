@@ -35,12 +35,14 @@ export function Modal({
   className = '',
   size = 'md',
   closeOnBackdrop = true,
+  titleId,
 }: {
   children: ReactNode;
   onClose: () => void;
   className?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   closeOnBackdrop?: boolean;
+  titleId?: string;
 }) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -68,7 +70,7 @@ export function Modal({
         if (closeOnBackdrop && event.target === event.currentTarget) onClose();
       }}
     >
-      <div className={cx('sheet', `sheet-${size}`, className)} role="dialog" aria-modal="true">
+      <div className={cx('sheet', `sheet-${size}`, className)} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         {children}
       </div>
     </div>,
@@ -159,12 +161,12 @@ export function ConfirmHost() {
   };
 
   return (
-    <Modal size="sm" onClose={() => settle(false)} className="confirm-sheet">
+    <Modal size="sm" onClose={() => settle(false)} className="confirm-sheet" titleId="confirm-dialog-title">
       <div className="confirm">
         <div className={cx('confirm-icon', current.danger && 'danger')}>
           <IconAlert size={22} />
         </div>
-        <h3>{current.title}</h3>
+        <h3 id="confirm-dialog-title">{current.title}</h3>
         {current.message && <div className="confirm-message">{current.message}</div>}
         <div className="confirm-actions">
           <button type="button" className="btn btn-ghost" onClick={() => settle(false)}>
@@ -299,32 +301,41 @@ export function PhotoLightbox({
   startIndex: number;
   onClose: () => void;
 }) {
+  const images = photos.map((photo) => ({ src: photoUrl(photo.file), caption: photo.caption }));
+  return <ImageLightbox images={images} startIndex={startIndex} onClose={onClose} />;
+}
+
+export function ImageLightbox({ images, startIndex, onClose }: {
+  images: { src: string; caption?: string }[];
+  startIndex: number;
+  onClose: () => void;
+}) {
   const [index, setIndex] = useState(startIndex);
-  const photo = photos[index];
+  const image = images[index];
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.stopImmediatePropagation(); onClose(); }
-      if (event.key === 'ArrowLeft') setIndex((i) => (i - 1 + photos.length) % photos.length);
-      if (event.key === 'ArrowRight') setIndex((i) => (i + 1) % photos.length);
+      if (event.key === 'ArrowLeft') setIndex((i) => (i - 1 + images.length) % images.length);
+      if (event.key === 'ArrowRight') setIndex((i) => (i + 1) % images.length);
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose, photos.length]);
+  }, [onClose, images.length]);
 
-  if (!photo) return null;
+  if (!image) return null;
 
   return createPortal(
     <div className="lightbox" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
       <button type="button" className="lightbox-close" onClick={onClose} aria-label="关闭">
         <IconX size={22} />
       </button>
-      {photos.length > 1 && (
+      {images.length > 1 && (
         <>
           <button
             type="button"
             className="lightbox-nav left"
-            onClick={() => setIndex((i) => (i - 1 + photos.length) % photos.length)}
+            onClick={() => setIndex((i) => (i - 1 + images.length) % images.length)}
             aria-label="上一张"
           >
             <IconChevronLeft size={24} />
@@ -332,17 +343,17 @@ export function PhotoLightbox({
           <button
             type="button"
             className="lightbox-nav right"
-            onClick={() => setIndex((i) => (i + 1) % photos.length)}
+            onClick={() => setIndex((i) => (i + 1) % images.length)}
             aria-label="下一张"
           >
             <IconChevronRight size={24} />
           </button>
         </>
       )}
-      <img className="lightbox-image" src={photoUrl(photo.file)} alt={photo.caption || '照片'} />
+      <img className="lightbox-image" src={image.src} alt={image.caption || '照片'} />
       <div className="lightbox-caption">
-        <span>{photo.caption || '未命名照片'}</span>
-        <span className="lightbox-count">{index + 1} / {photos.length}</span>
+        <span>{image.caption || '未命名照片'}</span>
+        <span className="lightbox-count">{index + 1} / {images.length}</span>
       </div>
     </div>,
     document.body

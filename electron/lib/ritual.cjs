@@ -3,6 +3,7 @@
 const { streamChat, completeText, friendlyError, ApiError, dataUrlFromFile } =
   require('./deepseek.cjs');
 const promptLib = require('./prompts.cjs');
+const { chatMessageContent, validateChatImages } = require('./chat-attachments.mjs');
 const { VIEW_ITEM_PHOTOS, createPhotoAccess } = require('./chat-photos.mjs');
 const { LIST_COLLECTION, MEMORY_LOOKUP_TOOLS, collectionPage, readMemory, searchMemory } = require('./chat-memory.mjs');
 const { assertVisionReady, isVisionReady } = require('./vision-config.mjs');
@@ -937,8 +938,9 @@ class RitualService {
     const history = (thread.messages || []).slice(-40);
     const system = this.buildFreeChatSystemPrompt(thread);
     const messages = [{ role: 'system', content: photoAccess ? `${system}\n\n${photoAccess.instructions}` : system }];
+    const detail = this.store.config.imageDetail === 'low' ? 'low' : 'high';
     for (const m of history) {
-      messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
+      messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: chatMessageContent(m, detail) });
     }
     if (openingInstruction) {
       const note = photoAccess ? this.prompt('freechat.photoNote', { names: photoAccess.names }) : '';
@@ -967,10 +969,11 @@ class RitualService {
     return messages;
   }
 
-  async sendFreeChatUserMessage(text, threadId) {
+  async sendFreeChatUserMessage(text, threadId, images = []) {
     if (this.freeChatBusy) throw new Error('管理员还在说话，等一句说完。');
     const content = String(text || '').trim();
-    if (!content) throw new Error('说点什么再发。');
+    const attachments = validateChatImages(images);
+    if (!content && !attachments.length) throw new Error('写点什么或添加图片再发。');
     if (content.length > 4000) throw new Error('一次最多 4000 字。');
     const thread = threadId ? this.store.getThread(threadId) : this.store.ensureActiveThread();
     if (!thread) throw new Error('这个对话不在了。');
@@ -979,6 +982,7 @@ class RitualService {
       role: 'user',
       content,
       ts: Date.now(),
+      ...(attachments.length ? { images: attachments } : {}),
     };
     const updated = this.store.appendThreadMessage(thread.id, message);
     this.sendEvent({ type: 'free:threads', threads: this.store.listThreadSummaries(), threadId: thread.id, channel: 'freechat' });
