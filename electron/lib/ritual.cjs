@@ -3,6 +3,9 @@
 const { streamChat, completeText, friendlyError, ApiError, dataUrlFromFile } =
   require('./deepseek.cjs');
 const promptLib = require('./prompts.cjs');
+const { VIEW_ITEM_PHOTOS, createPhotoAccess } = require('./chat-photos.mjs');
+const { LIST_COLLECTION, MEMORY_LOOKUP_TOOLS, collectionPage, readMemory, searchMemory } = require('./chat-memory.mjs');
+const { assertVisionReady, isVisionReady } = require('./vision-config.mjs');
 
 const PHASES = ['wipe', 'fantasy', 'instigate'];
 // 阶段规则不再写死在这里，而是来自 electron/prompts.default.json
@@ -60,34 +63,7 @@ const TYPE_LABELS = {
 };
 
 const MEMORY_TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'search_memory',
-      description:
-        '在全部过去的对话记忆中按关键词搜索。适合查找某款周边、某一天、某个阶段发生过什么，或用户说过的偏好。返回最相关的几条记忆摘要与片段。',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: '要搜索的关键词，例如周边名、日期、某个话题' },
-          limit: { type: 'integer', description: '返回条数，1-10，默认 5' },
-        },
-        required: ['query'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'read_memory',
-      description: '读取某一次历史对话的完整记录。参数是 search_memory 或 list_events 返回的 sessionId。',
-      parameters: {
-        type: 'object',
-        properties: { session_id: { type: 'string' } },
-        required: ['session_id'],
-      },
-    },
-  },
+  ...MEMORY_LOOKUP_TOOLS,
   {
     type: 'function',
     function: {
@@ -117,14 +93,7 @@ const MEMORY_TOOLS = [
       },
     },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'list_collection',
-      description: '列出收藏室里所有周边及其状态、价格、补款日。适合在聊天里翻旧账或比较。',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
+  LIST_COLLECTION,
   {
     type: 'function',
     function: {
@@ -183,17 +152,6 @@ function truncate(text, max) {
   const str = String(text || '');
   if (str.length <= max) return str;
   return `${str.slice(0, Math.max(0, max - 1))}…`;
-}
-
-function modelSupportsVision(model) {
-  const name = String(model || '').toLowerCase();
-  if (!name) return true;
-  if (name.includes('deepseek')) {
-    return name.includes('flash') || name.includes('vision') || name.includes('vl') || name.includes('v4');
-  }
-  // Custom OpenAI-compatible endpoints may be multimodal; assume yes and let
-  // the user switch back to a vision-capable model if the endpoint refuses.
-  return true;
 }
 
 function newPhaseRecord() {
@@ -559,16 +517,17 @@ class RitualService {
     return this.busy.has(sessionId);
   }
 
-  pickPhotos(item, limit) {
-    if (!item || !Array.isArray(item.photos)) return [];
-    const priority = ['full', 'face', 'chest', 'thigh', 'feet', 'butt', 'belly', 'back', 'armpit', 'private', 'underSkirt', 'real', 'promo', 'other'];
-    const scored = item.photos.map((photo, index) => {
-      const rank = priority.indexOf(photo.shot);
-      return { photo, index, rank: rank < 0 ? priority.length : rank };
+  photoAccess(item, history) {
+    return createPhotoAccess({
+      photos: item?.photos || [],
+      history,
+      labels: SHOT_LABELS,
+      config: this.store.config,
+      loadImage: (photo) => {
+        const abs = this.store.absImagePath(photo.file);
+        return abs ? dataUrlFromFile(abs, 1400) : null;
+      },
     });
-    scored.sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
-    const max = Math.max(1, Math.min(10, Number(limit) || 6));
-    return scored.slice(0, max).map((s) => s.photo);
   }
 
   characterFor(item) {
@@ -663,32 +622,12 @@ class RitualService {
     return parts.join('\n\n');
   }
 
-  buildMessages({ session, item, phase, day }) {
-    const config = this.store.config;
+  buildMessages({ session, item, phase, day, photoAccess }) {
     const system = this.buildSystemPrompt({ item, phase, day, sessionId: session.id });
-    const messages = [{ role: 'system', content: system }];
-
-    const vision = modelSupportsVision(config.model);
-    const photos = this.pickPhotos(item, config.maxPhotosPerRequest);
-    const photoBlocks = [];
-    const photoNames = [];
-    for (const p of photos) {
-      photoNames.push(`${SHOT_LABELS[p.shot] || '照片'}${p.caption ? `（${p.caption}）` : ''}`);
-      if (!vision) continue;
-      const abs = this.store.absImagePath(p.file);
-      if (!abs) continue;
-      const url = dataUrlFromFile(abs, 1400);
-      if (!url) continue;
-      photoBlocks.push({
-        type: 'image_url',
-        image_url: { url, detail: config.imageDetail === 'low' ? 'low' : 'high' },
-      });
-    }
-    const photoNote = photoBlocks.length
-      ? this.prompt('ritual.photoNote', { count: photoBlocks.length, names: photoNames.join('、') })
-      : vision
-        ? this.prompt('ritual.photoNoteNoFiles', {})
-        : this.prompt('ritual.photoNoteNoVision', { model: config.model, names: photoNames.join('、') || '无' });
+    const photoNote = photoAccess
+      ? this.prompt('ritual.photoNote', { count: photoAccess.count, names: photoAccess.names })
+      : this.prompt('ritual.photoNoteNoFiles', {});
+    const messages = [{ role: 'system', content: `${system}\n\n${photoAccess?.instructions || photoNote}` }];
 
     const history = Array.isArray(session.messages) ? session.messages : [];
     for (const m of history) {
@@ -700,29 +639,17 @@ class RitualService {
     if (!history.length) {
       messages.push({
         role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: this.prompt('ritual.opening', {
-              item: item?.name || session.itemName,
-              photoNote,
-              name: this.userName(),
-            }),
-          },
-          ...photoBlocks,
-        ],
+        content: this.prompt('ritual.opening', {
+          item: item?.name || session.itemName,
+          photoNote,
+          name: this.userName(),
+        }),
       });
     } else if (last?.role === 'user') {
       const idx = messages.length - 1;
       messages[idx] = {
         role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: this.prompt('ritual.photoAttached', { text: last.content, photoNote }),
-          },
-          ...photoBlocks,
-        ],
+        content: this.prompt('ritual.photoAttached', { text: last.content, photoNote }),
       };
     }
 
@@ -746,8 +673,10 @@ class RitualService {
 
     const item = this.store.getItem(session.itemId);
     const day = session.day || this.today();
-    const messages = this.buildMessages({ session, item, phase: session.phase, day });
+    const photoAccess = this.photoAccess(item, session.messages);
+    const messages = this.buildMessages({ session, item, phase: session.phase, day, photoAccess });
     const apiKey = this.store.getApiKey();
+    const config = { ...this.store.config };
     if (!apiKey) {
       const err = new ApiError('missing key', { code: 'NO_KEY' });
       this.sendEvent({ type: 'chat:error', sessionId, message: friendlyError(err) });
@@ -762,14 +691,15 @@ class RitualService {
     let reasoning = '';
     const toolTrace = [];
     const working = messages.slice();
+    const tools = photoAccess ? [...MEMORY_TOOLS, VIEW_ITEM_PHOTOS] : MEMORY_TOOLS;
 
     try {
       for (let round = 0; round < 4; round += 1) {
         const result = await streamChat({
-          config: this.store.config,
+          config,
           apiKey,
           messages: working,
-          tools: MEMORY_TOOLS,
+          tools: round < 3 ? tools : undefined,
           signal: controller.signal,
           onDelta: (text) => {
             full += text;
@@ -785,6 +715,7 @@ class RitualService {
           const assistantToolMessage = {
             role: 'assistant',
             content: result.content || null,
+            ...(result.reasoning ? { reasoning_content: result.reasoning } : {}),
             tool_calls: result.toolCalls.map((tc, i) => ({
               id: tc.id || `call_${round}_${i}`,
               type: 'function',
@@ -808,8 +739,10 @@ class RitualService {
               status: 'running',
             });
             let toolResult;
+            let photoResult;
             try {
-              toolResult = this.executeTool(tc.function.name, args);
+              if (tc.function.name === VIEW_ITEM_PHOTOS.function.name) photoResult = photoAccess?.view(args);
+              toolResult = photoResult?.result ?? this.executeTool(tc.function.name, args);
             } catch (err) {
               toolResult = { error: err?.message || '工具执行失败' };
             }
@@ -830,9 +763,11 @@ class RitualService {
             working.push({
               role: 'tool',
               tool_call_id: tc.id,
-              content: truncate(text, 12000),
+              content: photoResult?.content ?? (tc.function.name === 'read_item' ? text : truncate(text, 12000)),
             });
           }
+          const images = photoAccess?.takeImageMessage();
+          if (images) working.push(images);
           full = '';
           reasoning = '';
           continue;
@@ -851,6 +786,7 @@ class RitualService {
         ts: Date.now(),
         reasoning: reasoning ? truncate(reasoning, 6000) : '',
         toolTrace: toolTrace.length ? toolTrace : undefined,
+        viewedPhotoIds: photoAccess?.viewedIds.size ? [...photoAccess.viewedIds] : undefined,
       };
       this.appendMessage(session, message);
       this.sendEvent({ type: 'chat:done', sessionId, message });
@@ -995,39 +931,19 @@ class RitualService {
     return parts.join('\n\n');
   }
 
-  buildFreeChatMessages(thread, openingInstruction) {
-    const config = this.store.config;
+  buildFreeChatMessages(thread, openingInstruction, photoAccess) {
     const name = this.userName();
     const history = (thread.messages || []).slice(-40);
-    const messages = [{ role: 'system', content: this.buildFreeChatSystemPrompt(thread) }];
+    const system = this.buildFreeChatSystemPrompt(thread);
+    const messages = [{ role: 'system', content: photoAccess ? `${system}\n\n${photoAccess.instructions}` : system }];
     for (const m of history) {
       messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
     }
     if (openingInstruction) {
-      const blocks = [];
-      const names = [];
-      const item = thread.itemId ? this.store.getItem(thread.itemId) : null;
-      if (item && modelSupportsVision(config.model)) {
-        for (const p of this.pickPhotos(item, Math.min(4, Number(config.maxPhotosPerRequest) || 4))) {
-          names.push(`${SHOT_LABELS[p.shot] || '照片'}${p.caption ? `（${p.caption}）` : ''}`);
-          const abs = this.store.absImagePath(p.file);
-          if (!abs) continue;
-          const url = dataUrlFromFile(abs, 1400);
-          if (!url) continue;
-          blocks.push({
-            type: 'image_url',
-            image_url: { url, detail: config.imageDetail === 'low' ? 'low' : 'high' },
-          });
-        }
-      }
-      const note = blocks.length
-        ? this.prompt('freechat.photoNote', { names: names.join('、') })
-        : '';
+      const note = photoAccess ? this.prompt('freechat.photoNote', { names: photoAccess.names }) : '';
       messages.push({
         role: 'user',
-        content: blocks.length
-          ? [{ type: 'text', text: `${openingInstruction}\n\n${note}` }, ...blocks]
-          : openingInstruction,
+        content: note ? `${openingInstruction}\n\n${note}` : openingInstruction,
       });
     } else if (!history.length) {
       const item = thread?.itemId ? this.store.getItem(thread.itemId) : null;
@@ -1081,6 +997,7 @@ class RitualService {
     if (!openingInstruction && last?.role === 'assistant') return null;
 
     const apiKey = this.store.getApiKey();
+    const config = { ...this.store.config };
     if (!apiKey) {
       const err = new ApiError('missing key', { code: 'NO_KEY' });
       this.sendEvent({ type: 'chat:error', sessionId: thread.id, channel: 'freechat', message: friendlyError(err) });
@@ -1097,15 +1014,18 @@ class RitualService {
     let full = '';
     let reasoning = '';
     const toolTrace = [];
-    const working = this.buildFreeChatMessages(thread, openingInstruction);
+    const item = thread.itemId ? this.store.getItem(thread.itemId) : null;
+    const photoAccess = this.photoAccess(item, thread.messages);
+    const working = this.buildFreeChatMessages(thread, openingInstruction, photoAccess);
+    const tools = photoAccess ? [...MEMORY_TOOLS, VIEW_ITEM_PHOTOS] : MEMORY_TOOLS;
 
     try {
       for (let round = 0; round < 4; round += 1) {
         const result = await streamChat({
-          config: this.store.config,
+          config,
           apiKey,
           messages: working,
-          tools: MEMORY_TOOLS,
+          tools: round < 3 ? tools : undefined,
           signal: controller.signal,
           onDelta: (text) => {
             full += text;
@@ -1121,6 +1041,7 @@ class RitualService {
           const assistantToolMessage = {
             role: 'assistant',
             content: result.content || null,
+            ...(result.reasoning ? { reasoning_content: result.reasoning } : {}),
             tool_calls: result.toolCalls.map((tc, i) => ({
               id: tc.id || `free_call_${round}_${i}`,
               type: 'function',
@@ -1137,8 +1058,10 @@ class RitualService {
             try { args = JSON.parse(tc.function.arguments || '{}'); } catch { args = {}; }
             this.sendEvent({ type: 'chat:tool', ...eventBase, name: tc.function.name, args, status: 'running' });
             let toolResult;
+            let photoResult;
             try {
-              toolResult = this.executeTool(tc.function.name, args);
+              if (tc.function.name === VIEW_ITEM_PHOTOS.function.name) photoResult = photoAccess?.view(args);
+              toolResult = photoResult?.result ?? this.executeTool(tc.function.name, args);
             } catch (err) {
               toolResult = { error: err?.message || '工具执行失败' };
             }
@@ -1148,8 +1071,14 @@ class RitualService {
               type: 'chat:tool', ...eventBase, name: tc.function.name, args,
               status: 'done', preview: truncate(text, 160),
             });
-            working.push({ role: 'tool', tool_call_id: tc.id, content: truncate(text, 12000) });
+            working.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: photoResult?.content ?? (tc.function.name === 'read_item' ? text : truncate(text, 12000)),
+            });
           }
+          const images = photoAccess?.takeImageMessage();
+          if (images) working.push(images);
           full = '';
           reasoning = '';
           continue;
@@ -1168,6 +1097,7 @@ class RitualService {
         ts: Date.now(),
         reasoning: reasoning ? truncate(reasoning, 6000) : '',
         toolTrace: toolTrace.length ? toolTrace : undefined,
+        viewedPhotoIds: photoAccess?.viewedIds.size ? [...photoAccess.viewedIds] : undefined,
       };
       const appended = this.store.appendThreadMessage(thread.id, message);
       if (!appended) {
@@ -1201,6 +1131,7 @@ class RitualService {
     const item = this.store.getItem(itemId);
     if (!item) throw new Error('这款周边已经被删除了。');
     if (!this.store.getApiKey()) return { skipped: 'no-key' };
+    if (!isVisionReady(this.store.config)) return { skipped: 'vision-model' };
     if (this.freeChatBusy) return { skipped: 'busy' };
 
     const name = this.userName();
@@ -1243,6 +1174,8 @@ class RitualService {
     const config = this.store.config;
     if (!force && config.dailyChatEnabled === false) return { skipped: true, reason: 'disabled' };
     if (!this.store.getApiKey()) return { skipped: true, reason: 'no-key' };
+    if (!force && !isVisionReady(config)) return { skipped: true, reason: 'vision-model' };
+    assertVisionReady(config);
     const now = Date.now();
     const day = this.today();
     const chat = this.store.getFreeChat();
@@ -1291,64 +1224,23 @@ class RitualService {
     const sessions = this.store.listSessions();
     const items = this.store.listItems();
 
-    if (name === 'search_memory') {
-      const query = String(args.query || '').trim();
-      if (!query) return { error: 'query 不能为空' };
-      const limit = Math.max(1, Math.min(10, Number(args.limit) || 5));
-      const q = query.toLowerCase();
-      const scored = [];
-      for (const s of sessions) {
-        if (!s.archived) continue;
-        const textParts = [];
-        let score = 0;
-        if (String(s.itemName).toLowerCase().includes(q)) score += 6;
-        if (String(s.summary).toLowerCase().includes(q)) score += 4;
-        if (String(s.day).includes(q)) score += 3;
-        const label = PHASE_META[s.phase]?.label || s.phase;
-        if (String(label).includes(q)) score += 2;
-        let snippet = '';
-        for (const m of s.messages || []) {
-          if (!snippet && String(m.content).toLowerCase().includes(q)) {
-            const idx = String(m.content).toLowerCase().indexOf(q);
-            snippet = truncate(String(m.content).slice(Math.max(0, idx - 60), idx + 180), 220);
-            score += 3;
-          }
-          textParts.push(m.content);
-        }
-        if (score > 0) {
-          scored.push({
-            score,
-            sessionId: s.id,
-            date: s.day,
-            phase: label,
-            itemName: s.itemName,
-            summary: truncate(s.summary, 220),
-            snippet,
-          });
-        }
-      }
-      scored.sort((a, b) => b.score - a.score || String(b.date).localeCompare(String(a.date)));
-      const results = scored.slice(0, limit).map(({ score, ...rest }) => rest);
-      return results.length
-        ? { results }
-        : { results: [], note: '没有找到相关记忆。' };
-    }
-
-    if (name === 'read_memory') {
-      const session = sessions.find((s) => s.id === args.session_id);
-      if (!session) return { error: '没有这次对话记录' };
-      const transcript = (session.messages || [])
-        .map((m) => `${m.role === 'user' ? this.userName() : '你'}：${m.content}`)
-        .join('\n');
-      return {
-        sessionId: session.id,
-        date: session.day,
-        phase: PHASE_META[session.phase]?.label || session.phase,
-        itemName: session.itemName,
-        summary: session.summary,
-        outcome: session.outcome,
-        transcript: truncate(transcript, 9000),
+    if (name === 'search_memory' || name === 'read_memory') {
+      const context = {
+        getItemName: (itemId) => itemId ? this.store.getItem(itemId)?.name : undefined,
+        phaseLabel: (phase) => PHASE_META[phase]?.label || phase,
+        dateKey: localDateKey,
       };
+      if (name === 'search_memory') {
+        return searchMemory({ ...context, sessions, threads: this.store.sortedThreads(), args });
+      }
+      const session = sessions.find((entry) => entry.id === args?.session_id);
+      return readMemory({
+        ...context,
+        session,
+        thread: session ? null : this.store.getThread(args?.session_id),
+        userName: this.userName(),
+        args,
+      });
     }
 
     if (name === 'list_events') {
@@ -1386,6 +1278,7 @@ class RitualService {
           status: item.status,
           characterId: item.characterId || null,
           character: (() => { const ch = this.characterFor(item); return ch ? { id: ch.id, name: ch.name, source: ch.source, description: truncate(ch.description, 600) } : null; })(),
+          series: item.series,
           scale: item.scale,
           originalPrice: item.originalPrice,
           purchasePrice: item.purchasePrice,
@@ -1394,7 +1287,10 @@ class RitualService {
           dueDate: item.dueDate,
           detail: item.detail,
           thought: item.thought,
-          photos: (item.photos || []).map((p) => SHOT_LABELS[p.shot] || '照片'),
+          photos: (item.photos || []).map((photo) => ({
+            label: SHOT_LABELS[photo.shot] || '照片',
+            caption: photo.caption,
+          })),
           createdAt: item.createdAt,
         },
         history: itemSessions.slice(0, 10).map((s) => ({
@@ -1407,13 +1303,19 @@ class RitualService {
     }
 
     if (name === 'list_collection') {
+      const { page, total, nextOffset } = collectionPage(items, args?.query, args?.offset, (item) => {
+        const character = this.characterFor(item);
+        return [item.name, item.series, item.type, TYPE_LABELS[item.type], character?.name, character?.source];
+      });
       return {
+        total,
+        nextOffset,
         counts: {
           owned: items.filter((i) => i.status === 'owned').length,
           pending: items.filter((i) => i.status === 'pending').length,
           watching: items.filter((i) => i.status === 'watching').length,
         },
-        items: items.map((i) => ({
+        items: page.map((i) => ({
           id: i.id,
           name: i.name,
           type: TYPE_LABELS[i.type] || i.type,

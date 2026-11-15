@@ -13,11 +13,14 @@ function dayKey(date = new Date()): string {
 
 import { MobileStore } from './store';
 import {
-  ApiError, completeText, emitText, friendlyError, modelSupportsVision,
+  ApiError, completeText, emitText, friendlyError,
   requestChat,
 } from './ai';
 
 import { PROMPT_DEFAULTS, renderPrompt } from '../src/prompts';
+import { VIEW_ITEM_PHOTOS, createPhotoAccess } from '../electron/lib/chat-photos.mjs';
+import { LIST_COLLECTION, MEMORY_LOOKUP_TOOLS, collectionPage, readMemory, searchMemory } from '../electron/lib/chat-memory.mjs';
+import { assertVisionReady, isVisionReady } from '../electron/lib/vision-config.mjs';
 
 const PHASE_PROMPT_KEY: Record<Phase, string> = {
   wipe: 'ritual.phaseWipe',
@@ -29,29 +32,7 @@ const SHOT_LABELS: Record<string, string> = Object.fromEntries(SHOT_OPTIONS.map(
 const TYPE_LABELS: Record<string, string> = Object.fromEntries(TYPE_OPTIONS.map((t) => [t.value, t.label]));
 
 const MEMORY_TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'search_memory',
-      description: '在全部过去的对话记忆中按关键词搜索。适合查找某款周边、某一天、某个阶段发生过什么，或用户说过的偏好。',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: '要搜索的关键词，例如周边名、日期、某个话题' },
-          limit: { type: 'integer', description: '返回条数，1-10，默认 5' },
-        },
-        required: ['query'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'read_memory',
-      description: '读取某一次历史对话的完整记录。参数是 search_memory 或 list_events 返回的 sessionId。',
-      parameters: { type: 'object', properties: { session_id: { type: 'string' } }, required: ['session_id'] },
-    },
-  },
+  ...MEMORY_LOOKUP_TOOLS,
   {
     type: 'function',
     function: {
@@ -77,14 +58,7 @@ const MEMORY_TOOLS = [
       parameters: { type: 'object', properties: { item_id: { type: 'string' } }, required: ['item_id'] },
     },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'list_collection',
-      description: '列出收藏室里所有周边及其状态、价格、补款日。',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
+  LIST_COLLECTION,
   {
     type: 'function',
     function: {
@@ -410,14 +384,14 @@ export class MobileEngine {
   }
 
   // ---------- prompts ----------
-  pickPhotos(item: Item | null, limit: number) {
-    if (!item) return [];
-    const priority = ['full', 'face', 'chest', 'thigh', 'feet', 'butt', 'belly', 'back', 'armpit', 'private', 'underSkirt', 'real', 'promo', 'other'];
-    return (item.photos || [])
-      .map((photo, index) => ({ photo, index, rank: Math.max(0, priority.indexOf(photo.shot)) }))
-      .sort((a, b) => a.rank - b.rank || a.index - b.index)
-      .slice(0, Math.max(1, Math.min(10, limit)))
-      .map((s) => s.photo);
+  photoAccess(item: Item | null, history: ChatMessage[]) {
+    return createPhotoAccess({
+      photos: item?.photos || [],
+      history,
+      labels: SHOT_LABELS,
+      config: this.store.config,
+      loadImage: (photo) => /^data:image\//.test(photo.file) ? photo.file : null,
+    });
   }
 
   itemContext(item: Item | null): string {
@@ -480,48 +454,30 @@ export class MobileEngine {
     return parts.join('\n\n');
   }
 
-  buildMessages({ session, item, phase, day }: { session: Session; item: Item | null; phase: Phase; day: string }) {
-    const config = this.store.config;
-    const vision = modelSupportsVision(config.model);
-    const photos = vision ? this.pickPhotos(item, config.maxPhotosPerRequest) : this.pickPhotos(item, config.maxPhotosPerRequest);
-    const blocks: any[] = [];
-    const names: string[] = [];
-    for (const p of photos) {
-      names.push(`${SHOT_LABELS[p.shot] || '照片'}${p.caption ? `（${p.caption}）` : ''}`);
-      if (!vision || !/^data:image\//.test(p.file)) continue;
-      blocks.push({ type: 'image_url', image_url: { url: p.file, detail: config.imageDetail === 'low' ? 'low' : 'high' } });
-    }
-    const photoNote = blocks.length
-      ? this.prompt('ritual.photoNote', { count: blocks.length, names: names.join('、') })
-      : vision
-        ? this.prompt('ritual.photoNoteNoFiles', {})
-        : this.prompt('ritual.photoNoteNoVision', { model: config.model, names: names.join('、') || '无' });
-    const messages: any[] = [{ role: 'system', content: this.buildSystemPrompt({ item, phase, day, sessionId: session.id }) }];
+  buildMessages({ session, item, phase, day, photoAccess }: {
+    session: Session; item: Item | null; phase: Phase; day: string; photoAccess: ReturnType<typeof createPhotoAccess>;
+  }) {
+    const system = this.buildSystemPrompt({ item, phase, day, sessionId: session.id });
+    const photoNote = photoAccess
+      ? this.prompt('ritual.photoNote', { count: photoAccess.count, names: photoAccess.names })
+      : this.prompt('ritual.photoNoteNoFiles', {});
+    const messages: any[] = [{ role: 'system', content: `${system}\n\n${photoAccess?.instructions || photoNote}` }];
     const history = session.messages || [];
     for (const m of history) messages.push({ role: m.role, content: m.content });
     const last = history[history.length - 1];
     if (!history.length) {
       messages.push({
         role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: this.prompt('ritual.opening', {
-              item: item?.name || session.itemName,
-              photoNote,
-              name: this.userName(),
-            }),
-          },
-          ...blocks,
-        ],
+        content: this.prompt('ritual.opening', {
+          item: item?.name || session.itemName,
+          photoNote,
+          name: this.userName(),
+        }),
       });
     } else if (last?.role === 'user') {
       messages[messages.length - 1] = {
         role: 'user',
-        content: [
-          { type: 'text', text: this.prompt('ritual.photoAttached', { text: last.content, photoNote }) },
-          ...blocks,
-        ],
+        content: this.prompt('ritual.photoAttached', { text: last.content, photoNote }),
       };
     }
     return messages;
@@ -531,37 +487,25 @@ export class MobileEngine {
   executeTool(name: string, args: any): any {
     const sessions = this.store.listSessions();
     const items = this.store.listItems();
-    if (name === 'search_memory') {
-      const query = String(args.query || '').trim();
-      if (!query) return { error: 'query 不能为空' };
-      const limit = Math.max(1, Math.min(10, Number(args.limit) || 5));
-      const q = query.toLowerCase();
-      const scored: any[] = [];
-      for (const s of sessions) {
-        if (!s.archived) continue;
-        let score = 0;
-        if (String(s.itemName).toLowerCase().includes(q)) score += 6;
-        if (String(s.summary).toLowerCase().includes(q)) score += 4;
-        if (String(s.day).includes(q)) score += 3;
-        let snippet = '';
-        for (const m of s.messages || []) {
-          if (!snippet && String(m.content).toLowerCase().includes(q)) {
-            const idx = String(m.content).toLowerCase().indexOf(q);
-            snippet = truncate(String(m.content).slice(Math.max(0, idx - 60), idx + 180), 220);
-            score += 3;
-          }
-        }
-        if (score) scored.push({ score, sessionId: s.id, date: s.day, phase: PHASE_META[s.phase]?.label || s.phase, itemName: s.itemName, summary: truncate(s.summary, 220), snippet });
+    if (name === 'search_memory' || name === 'read_memory') {
+      const context = {
+        getItemName: (itemId?: string | null) => itemId ? this.store.getItem(itemId)?.name : undefined,
+        phaseLabel: (phase: Phase) => PHASE_META[phase]?.label || phase,
+        dateKey: dayKey,
+      };
+      if (name === 'search_memory') {
+        return searchMemory({ ...context, sessions, threads: this.store.sortedThreads(), args });
       }
-      scored.sort((a, b) => b.score - a.score || String(b.date).localeCompare(String(a.date)));
-      return { results: scored.slice(0, limit).map(({ score, ...rest }) => rest) };
+      const session = sessions.find((entry) => entry.id === args?.session_id);
+      return readMemory({
+        ...context,
+        session,
+        thread: session ? null : this.store.getThread(args?.session_id),
+        userName: this.userName(),
+        args,
+      });
     }
-    if (name === 'read_memory') {
-      const s = sessions.find((x) => x.id === args.session_id);
-      if (!s) return { error: '没有这次对话记录' };
-      const transcript = (s.messages || []).map((m) => `${m.role === 'user' ? this.userName() : '管理员'}：${m.content}`).join('\n');
-      return { sessionId: s.id, date: s.day, phase: PHASE_META[s.phase]?.label || s.phase, itemName: s.itemName, summary: s.summary, outcome: s.outcome, transcript: truncate(transcript, 9000) };
-    }
+
     if (name === 'list_events') {
       const limit = Math.max(1, Math.min(50, Number(args.limit) || 20));
       let list = sessions.filter((s) => s.archived);
@@ -585,6 +529,7 @@ export class MobileEngine {
           status: item.status,
           characterId: item.characterId || null,
           character: character ? { id: character.id, name: character.name, source: character.source, description: truncate(character.description, 600) } : null,
+          series: item.series,
           scale: item.scale,
           originalPrice: item.originalPrice,
           purchasePrice: item.purchasePrice,
@@ -593,15 +538,24 @@ export class MobileEngine {
           dueDate: item.dueDate,
           detail: item.detail,
           thought: item.thought,
-          photos: (item.photos || []).map((p) => SHOT_LABELS[p.shot] || '照片'),
+          photos: (item.photos || []).map((photo) => ({
+            label: SHOT_LABELS[photo.shot] || '照片',
+            caption: photo.caption,
+          })),
         },
         history,
       };
     }
     if (name === 'list_collection') {
+      const { page, total, nextOffset } = collectionPage(items, args?.query, args?.offset, (item) => {
+        const character = this.characterFor(item);
+        return [item.name, item.series, item.type, TYPE_LABELS[item.type], character?.name, character?.source];
+      });
       return {
+        total,
+        nextOffset,
         counts: this.counts(),
-        items: items.map((i) => ({
+        items: page.map((i) => ({
           id: i.id,
           name: i.name,
           type: TYPE_LABELS[i.type] || i.type,
@@ -665,33 +619,37 @@ export class MobileEngine {
     const last = session.messages[session.messages.length - 1];
     if (last?.role === 'assistant') return;
     const apiKey = this.store.getApiKey();
+    const config = { ...this.store.config };
     if (!apiKey) {
       const err = new ApiError('missing key', { code: 'NO_KEY' });
       this.emit({ type: 'chat:error', sessionId, message: friendlyError(err) });
       throw err;
     }
     const item = this.store.getItem(session.itemId);
-    const working = this.buildMessages({ session, item, phase: session.phase, day: session.day || this.today() });
+    const photoAccess = this.photoAccess(item, session.messages);
+    const working = this.buildMessages({ session, item, phase: session.phase, day: session.day || this.today(), photoAccess });
     this.busy.add(sessionId);
     const controller = new AbortController();
     this.controllers.set(sessionId, controller);
     this.emit({ type: 'chat:start', sessionId, phase: session.phase });
     const trace: any[] = [];
+    const tools = photoAccess ? [...MEMORY_TOOLS, VIEW_ITEM_PHOTOS] : MEMORY_TOOLS;
     let finalText = '';
 
     try {
       for (let round = 0; round < 4; round += 1) {
         const result = await requestChat({
-          config: this.store.config,
+          config,
           apiKey,
           messages: working,
-          tools: MEMORY_TOOLS,
+          tools: round < 3 ? tools : undefined,
           signal: controller.signal,
         });
         if (result.toolCalls.length) {
           const assistantMessage = {
             role: 'assistant',
             content: result.content || null,
+            ...(result.reasoning ? { reasoning_content: result.reasoning } : {}),
             tool_calls: result.toolCalls.map((tc, i) => ({ id: tc.id || `call_${round}_${i}`, type: 'function', function: { name: tc.function?.name || '', arguments: tc.function?.arguments || '{}' } })),
           };
           working.push(assistantMessage);
@@ -700,12 +658,24 @@ export class MobileEngine {
             try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
             this.emit({ type: 'chat:tool', sessionId, name: tc.function.name, args, status: 'running' });
             let toolResult: any;
-            try { toolResult = this.executeTool(tc.function.name, args); } catch (err: any) { toolResult = { error: err?.message || '工具执行失败' }; }
+            let photoResult;
+            try {
+              if (tc.function.name === VIEW_ITEM_PHOTOS.function.name) photoResult = photoAccess?.view(args);
+              toolResult = photoResult?.result ?? this.executeTool(tc.function.name, args);
+            } catch (err: any) {
+              toolResult = { error: err?.message || '工具执行失败' };
+            }
             const text = JSON.stringify(toolResult);
             trace.push({ name: tc.function.name, args, result: truncate(text, 500) });
             this.emit({ type: 'chat:tool', sessionId, name: tc.function.name, args, status: 'done', preview: truncate(text, 160) });
-            working.push({ role: 'tool', tool_call_id: tc.id, content: truncate(text, 12000) });
+            working.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: photoResult?.content ?? (tc.function.name === 'read_item' ? text : truncate(text, 12000)),
+            });
           }
+          const images = photoAccess?.takeImageMessage();
+          if (images) working.push(images);
           continue;
         }
         finalText = result.content || '';
@@ -713,7 +683,10 @@ export class MobileEngine {
       }
       if (!finalText.trim()) throw new Error('没有收到回复内容，请重试。');
       await emitText(finalText.trim(), (text) => this.emit({ type: 'chat:delta', sessionId, text }));
-      const message = msg('assistant', finalText.trim(), { toolTrace: trace.length ? trace : undefined });
+      const message = msg('assistant', finalText.trim(), {
+        toolTrace: trace.length ? trace : undefined,
+        viewedPhotoIds: photoAccess?.viewedIds.size ? [...photoAccess.viewedIds] : undefined,
+      });
       await this.appendMessage(session, message);
       this.emit({ type: 'chat:done', sessionId, message });
       return message;
@@ -995,37 +968,15 @@ export class MobileEngine {
     return parts.join('\n\n');
   }
 
-  buildFreeChatMessages(thread: ChatThread, openingInstruction?: string) {
-    const config = this.store.config;
+  buildFreeChatMessages(thread: ChatThread, openingInstruction: string | undefined, photoAccess: ReturnType<typeof createPhotoAccess>) {
     const name = this.userName();
     const history = (thread.messages || []).slice(-40);
-    const messages: any[] = [{ role: 'system', content: this.buildFreeChatSystemPrompt(thread) }];
+    const system = this.buildFreeChatSystemPrompt(thread);
+    const messages: any[] = [{ role: 'system', content: photoAccess ? `${system}\n\n${photoAccess.instructions}` : system }];
     for (const m of history) messages.push({ role: m.role, content: m.content });
     if (openingInstruction) {
-      const blocks: any[] = [];
-      const names: string[] = [];
-      const item = thread.itemId ? this.store.getItem(thread.itemId) : null;
-      if (item && modelSupportsVision(config.model)) {
-        for (const p of this.pickPhotos(item, Math.min(4, Number(config.maxPhotosPerRequest) || 4))) {
-          names.push(`${SHOT_LABELS[p.shot] || '照片'}${p.caption ? `（${p.caption}）` : ''}`);
-          if (!/^data:image\//.test(p.file)) continue;
-          blocks.push({ type: 'image_url', image_url: { url: p.file, detail: config.imageDetail === 'low' ? 'low' : 'high' } });
-        }
-      }
-      if (blocks.length) {
-        messages.push({
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: `${openingInstruction}\n\n${this.prompt('freechat.photoNote', { names: names.join('、') })}`,
-            },
-            ...blocks,
-          ],
-        });
-      } else {
-        messages.push({ role: 'user', content: openingInstruction });
-      }
+      const note = photoAccess ? this.prompt('freechat.photoNote', { names: photoAccess.names }) : '';
+      messages.push({ role: 'user', content: note ? `${openingInstruction}\n\n${note}` : openingInstruction });
     } else if (!history.length) {
       const item = thread?.itemId ? this.store.getItem(thread.itemId) : null;
       if (item) {
@@ -1069,6 +1020,7 @@ export class MobileEngine {
     const last = thread.messages[thread.messages.length - 1];
     if (!openingInstruction && last?.role === 'assistant') return null;
     const apiKey = this.store.getApiKey();
+    const config = { ...this.store.config };
     if (!apiKey) {
       const err = new ApiError('missing key', { code: 'NO_KEY' });
       this.emit({ type: 'chat:error', sessionId: thread.id, channel: 'freechat', message: friendlyError(err) });
@@ -1081,16 +1033,26 @@ export class MobileEngine {
     const sessionId = thread.id;
     const eventBase = { sessionId, threadId, channel: 'freechat' };
     this.emit({ type: 'chat:start', ...eventBase, proactive });
-    const working = this.buildFreeChatMessages(thread, openingInstruction);
+    const item = thread.itemId ? this.store.getItem(thread.itemId) : null;
+    const photoAccess = this.photoAccess(item, thread.messages);
+    const working = this.buildFreeChatMessages(thread, openingInstruction, photoAccess);
     const trace: any[] = [];
+    const tools = photoAccess ? [...MEMORY_TOOLS, VIEW_ITEM_PHOTOS] : MEMORY_TOOLS;
     let finalText = '';
 
     try {
       for (let round = 0; round < 4; round += 1) {
-        const result = await requestChat({ config: this.store.config, apiKey, messages: working, tools: MEMORY_TOOLS, signal: controller.signal });
+        const result = await requestChat({
+          config,
+          apiKey,
+          messages: working,
+          tools: round < 3 ? tools : undefined,
+          signal: controller.signal,
+        });
         if (result.toolCalls.length) {
           const assistantMessage = {
             role: 'assistant', content: result.content || null,
+            ...(result.reasoning ? { reasoning_content: result.reasoning } : {}),
             tool_calls: result.toolCalls.map((tc, i) => ({ id: tc.id || `free_${round}_${i}`, type: 'function', function: { name: tc.function?.name || '', arguments: tc.function?.arguments || '{}' } })),
           };
           working.push(assistantMessage);
@@ -1099,12 +1061,24 @@ export class MobileEngine {
             try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
             this.emit({ type: 'chat:tool', ...eventBase, name: tc.function.name, args, status: 'running' });
             let toolResult: any;
-            try { toolResult = this.executeTool(tc.function.name, args); } catch (err: any) { toolResult = { error: err?.message || '工具执行失败' }; }
+            let photoResult;
+            try {
+              if (tc.function.name === VIEW_ITEM_PHOTOS.function.name) photoResult = photoAccess?.view(args);
+              toolResult = photoResult?.result ?? this.executeTool(tc.function.name, args);
+            } catch (err: any) {
+              toolResult = { error: err?.message || '工具执行失败' };
+            }
             const text = JSON.stringify(toolResult);
             trace.push({ name: tc.function.name, args, result: truncate(text, 500) });
             this.emit({ type: 'chat:tool', ...eventBase, name: tc.function.name, args, status: 'done', preview: truncate(text, 160) });
-            working.push({ role: 'tool', tool_call_id: tc.id, content: truncate(text, 12000) });
+            working.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: photoResult?.content ?? (tc.function.name === 'read_item' ? text : truncate(text, 12000)),
+            });
           }
+          const images = photoAccess?.takeImageMessage();
+          if (images) working.push(images);
           continue;
         }
         finalText = result.content || '';
@@ -1112,7 +1086,10 @@ export class MobileEngine {
       }
       if (!finalText.trim()) throw new Error('没有收到回复内容，请重试。');
       await emitText(finalText.trim(), (text) => this.emit({ type: 'chat:delta', ...eventBase, text }));
-      const message = msg('assistant', finalText.trim(), { toolTrace: trace.length ? trace : undefined });
+      const message = msg('assistant', finalText.trim(), {
+        toolTrace: trace.length ? trace : undefined,
+        viewedPhotoIds: photoAccess?.viewedIds.size ? [...photoAccess.viewedIds] : undefined,
+      });
       const appended = await this.store.appendThreadMessage(thread.id, message);
       if (!appended) {
         this.emit({ type: 'chat:stopped', ...eventBase });
@@ -1136,6 +1113,7 @@ export class MobileEngine {
     const item = this.store.getItem(itemId);
     if (!item) throw new Error('这款周边已经被删除了。');
     if (!this.store.getApiKey()) return { skipped: 'no-key' };
+    if (!isVisionReady(this.store.config)) return { skipped: 'vision-model' };
     if (this.freeChatBusy) return { skipped: 'busy' };
     const name = this.userName();
     const titleBase = mode === 'update' ? '藏品变化' : '新藏品';
@@ -1177,6 +1155,8 @@ export class MobileEngine {
     const config = this.store.config;
     if (!force && config.dailyChatEnabled === false) return { skipped: true, reason: 'disabled' };
     if (!this.store.getApiKey()) return { skipped: true, reason: 'no-key' };
+    if (!force && !isVisionReady(config)) return { skipped: true, reason: 'vision-model' };
+    assertVisionReady(config);
     const now = Date.now();
     const day = this.today();
     const chat = this.store.getFreeChat();

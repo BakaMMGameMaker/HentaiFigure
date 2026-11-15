@@ -226,7 +226,9 @@ export function ChatPage({
           break;
         case 'chat:tool':
           if (!isActive) return;
-          if (event.status === 'running') setToolStatus('正在翻阅记忆与仓库…');
+          if (event.status === 'running') {
+            setToolStatus(event.name === 'view_item_photos' ? '正在查看藏品照片…' : '正在翻阅记忆与仓库…');
+          }
           else setToolStatus('');
           break;
         case 'chat:done': {

@@ -8,6 +8,7 @@ import { MobileStore } from './store';
 import { MobileEngine } from './engine';
 import { exportSyncZip, importSyncZip } from './sync';
 import { friendlyError, testConnection } from './ai';
+import { connectionTestInput, verifyVisionSettings } from '../electron/lib/vision-config.mjs';
 import appConfig from '../app-config.json';
 
 // 版本号由 vite.mobile.config.ts 从 package.json 注入，避免手改漏改。
@@ -402,6 +403,19 @@ export function installMobileApi() {
         }
         if (patch.clearApiKey) clean.clearApiKey = true;
         else if (typeof patch.apiKey === 'string' && patch.apiKey.trim()) clean.apiKey = patch.apiKey.trim();
+        const current = { ...store.config };
+        try {
+          clean.verifiedVision = await verifyVisionSettings({
+            current,
+            patch: { ...clean, verifyVision: patch.verifyVision === true },
+            test: (config) => testConnection(config, config.apiKey),
+          });
+        } catch (error) {
+          throw new Error(friendlyError(error));
+        }
+        if (store.config.baseUrl !== current.baseUrl || store.config.model !== current.model || store.config.apiKey !== current.apiKey) {
+          throw new Error('API 设置已发生变化，请重新保存。');
+        }
         return store.updateConfig(clean);
       },
       resetPrompt: async () => { await ready; return store.resetSystemPrompt(); },
@@ -418,12 +432,7 @@ export function installMobileApi() {
       test: async (input: any) => {
         await ready;
         try {
-          const config = {
-            ...store.config,
-            baseUrl: String(input?.baseUrl || store.config.baseUrl),
-            model: String(input?.model || store.config.model),
-            apiKey: input?.apiKey ? String(input.apiKey) : store.config.apiKey,
-          };
+          const config = connectionTestInput(store.config, input);
           const result = await testConnection(config, config.apiKey);
           return result;
         } catch (err) {

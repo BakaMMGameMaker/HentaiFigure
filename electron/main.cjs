@@ -12,6 +12,7 @@ const { spawnSync } = require('node:child_process');
 const { Store } = require('./lib/store.cjs');
 const { RitualService, SHOT_LABELS, TYPE_LABELS, localDateKey } = require('./lib/ritual.cjs');
 const { testConnection, friendlyError } = require('./lib/deepseek.cjs');
+const { connectionTestInput, verifyVisionSettings } = require('./lib/vision-config.mjs');
 const { Updater } = require('./lib/updater.cjs');
 
 app.setName('HentaiFigure');
@@ -333,15 +334,6 @@ function importPhotoFiles(itemId, filePaths) {
   return added;
 }
 
-function readConfigTestInput(input = {}) {
-  const stored = store.getPublicConfig();
-  return {
-    baseUrl: String(input.baseUrl || stored.baseUrl || 'https://api.deepseek.com'),
-    model: String(input.model || stored.model || 'deepseek-flash'),
-    apiKey: input.apiKey ? String(input.apiKey) : store.getApiKey(),
-  };
-}
-
 function registerIpc() {
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
@@ -369,7 +361,7 @@ function registerIpc() {
   ipcMain.handle('window:close', () => mainWindow?.close());
 
   ipcMain.handle('config:get', () => store.getPublicConfig());
-  ipcMain.handle('config:save', (event, patch = {}) => {
+  ipcMain.handle('config:save', async (event, patch = {}) => {
     const clean = {};
     if (patch.baseUrl !== undefined) {
       const baseUrl = String(patch.baseUrl).trim();
@@ -418,6 +410,19 @@ function registerIpc() {
     }
     if (patch.clearApiKey) clean.apiKey = '';
     else if (typeof patch.apiKey === 'string' && patch.apiKey.trim()) clean.apiKey = patch.apiKey.trim();
+    const current = { ...store.config, apiKey: store.getApiKey() };
+    try {
+      clean.verifiedVision = await verifyVisionSettings({
+        current,
+        patch: { ...clean, verifyVision: patch.verifyVision === true },
+        test: (config) => testConnection({ config, apiKey: config.apiKey }),
+      });
+    } catch (error) {
+      throw new Error(friendlyError(error));
+    }
+    if (store.config.baseUrl !== current.baseUrl || store.config.model !== current.model || store.getApiKey() !== current.apiKey) {
+      throw new Error('API 设置已发生变化，请重新保存。');
+    }
     return store.updateConfig(clean);
   });
   ipcMain.handle('config:resetPrompt', () => store.resetSystemPrompt());
@@ -435,7 +440,7 @@ function registerIpc() {
   });
   ipcMain.handle('config:test', async (event, input = {}) => {
     try {
-      const cfg = readConfigTestInput(input);
+      const cfg = connectionTestInput({ ...store.config, apiKey: store.getApiKey() }, input);
       const result = await testConnection({ config: cfg, apiKey: cfg.apiKey });
       return { ok: true, ...result };
     } catch (err) {

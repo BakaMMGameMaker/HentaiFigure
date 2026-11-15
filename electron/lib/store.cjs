@@ -4,14 +4,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const promptLib = require('./prompts.cjs');
+const { DEEPSEEK_URL, DEFAULT_VISION_MODEL, isVisionReady, migrateVisionModel } = require('./vision-config.mjs');
 
 // 默认人格来自 electron/prompts.default.json（键 persona），
 // 不在代码里写死；用户可以在进阶设置里单独覆盖，或由开发人员模式写回默认文件。
 const DEFAULT_SYSTEM_PROMPT = promptLib.get('persona');
 
 const DEFAULT_CONFIG = {
-  baseUrl: 'https://api.deepseek.com',
-  model: 'deepseek-flash',
+  baseUrl: DEEPSEEK_URL,
+  model: DEFAULT_VISION_MODEL,
   temperature: 1.3,
   maxPhotosPerRequest: 6,
   imageDetail: 'high',
@@ -190,6 +191,9 @@ class Store {
     this.freechatPath = path.join(this.dataDir, 'freechat.json');
 
     this.config = { ...clone(DEFAULT_CONFIG), ...readJson(this.configPath, {}) };
+    const model = migrateVisionModel(this.config);
+    let configChanged = model !== this.config.model;
+    this.config.model = model;
     this.items = readJson(this.itemsPath, DEFAULT_ITEMS);
     this.characters = readJson(this.charactersPath, DEFAULT_CHARACTERS);
     this.daily = readJson(this.dailyPath, DEFAULT_DAILY);
@@ -205,6 +209,10 @@ class Store {
     if (typeof this.config.managerAvatar !== 'string') this.config.managerAvatar = '';
     if (!this.config.prompts || typeof this.config.prompts !== 'object' || Array.isArray(this.config.prompts)) {
       this.config.prompts = {};
+    }
+    if (Object.hasOwn(this.config.prompts, 'ritual.photoNoteNoVision')) {
+      delete this.config.prompts['ritual.photoNoteNoVision'];
+      configChanged = true;
     }
     this.config.devPromptMode = Boolean(this.config.devPromptMode);
 
@@ -252,11 +260,12 @@ class Store {
     if (!persona || persona.includes(v1Hint)) {
       delete this.config.prompts.persona;
       this.config.systemPrompt = DEFAULT_SYSTEM_PROMPT;
-      this.saveConfig();
+      configChanged = true;
     } else if (!this.config.prompts.persona && persona !== defaultPersona) {
       this.config.prompts.persona = persona.slice(0, 30000);
-      this.saveConfig();
+      configChanged = true;
     }
+    if (configChanged) this.saveConfig();
   }
 
   /** 给没有 characterId 的老藏品补一份角色档案。 */
@@ -304,6 +313,7 @@ class Store {
     return {
       baseUrl: this.config.baseUrl,
       model: this.config.model,
+      visionModelReady: isVisionReady(this.config),
       temperature: this.config.temperature,
       maxPhotosPerRequest: this.config.maxPhotosPerRequest,
       imageDetail: this.config.imageDetail,
@@ -427,7 +437,7 @@ class Store {
 
   updateConfig(patch) {
     const allowed = [
-      'baseUrl', 'model', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
+      'baseUrl', 'model', 'verifiedVision', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
       'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
       'userName', 'managerAvatar',
     ];

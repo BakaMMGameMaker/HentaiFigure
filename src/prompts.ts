@@ -24,7 +24,14 @@ export interface PromptGroup {
   fields: PromptField[];
 }
 
-const DATA_VARS = ['{name}', '{date}', '{item}', '{context}', '{digest}', '{changes}', '{time}', '{names}', '{count}', '{model}'];
+const DATA_VARS = ['{name}', '{date}', '{item}', '{context}', '{digest}', '{changes}', '{time}', '{names}', '{count}'];
+
+const ITEM_CHARACTER_FIELD: PromptField = {
+  key: 'ritual.characterBlock',
+  label: '区块 · 当前周边的角色档案（共用）',
+  hint: '藏品绑定了角色时接在周边资料后。上贡和日常聊天共用这一项。',
+  vars: ['{context}'],
+};
 
 export const PROMPT_SCHEMA: PromptGroup[] = [
   {
@@ -38,50 +45,50 @@ export const PROMPT_SCHEMA: PromptGroup[] = [
   {
     id: 'ritual',
     label: '上贡流程',
-    desc: '每天一次的上贡：擦拭、意淫、教唆。这里是阶段规则和开场白。',
+    desc: '先发系统提示，再发本阶段的开场指令或已有对话。三条阶段规则只发送当前阶段对应的一条。',
     fields: [
+      { key: 'ritual.scene', label: '系统块 · 日期与场景', hint: '接在人格底色后。', vars: ['{date}', '{name}'] },
+      { key: 'ritual.tools', label: '系统块 · 工具权限', hint: '说明管理员可以查询藏品和过去的对话。', vars: ['{name}'] },
       { key: 'ritual.phaseWipe', label: '阶段 · 擦拭', hint: '已拥有的藏品，用户正在动手除尘。', vars: ['{name}'] },
       { key: 'ritual.phaseFantasy', label: '阶段 · 意淫', hint: '待补款的藏品，只有宣传图。', vars: ['{name}'] },
       { key: 'ritual.phaseInstigate', label: '阶段 · 教唆', hint: '观望中的藏品，逼用户做决定。', vars: ['{name}'] },
-      { key: 'ritual.scene', label: '系统块 · 日期与场景', hint: '每次上贡的 system 里最先出现的一段。', vars: ['{date}', '{name}'] },
-      { key: 'ritual.tools', label: '系统块 · 工具权限', hint: '告诉管理员可以自己查记忆。', vars: ['{name}'] },
-      { key: 'ritual.output', label: '系统块 · 输出要求', hint: '只说话，不写旁白。', vars: ['{name}'] },
       { key: 'ritual.itemBlock', label: '区块 · 当前周边', hint: '周边资料的标题行，{context} 是应用自动生成的资料。', vars: ['{context}'] },
-      { key: 'ritual.characterBlock', label: '区块 · 角色档案', hint: '角色资料的标题行（上贡和日常共用）。', vars: ['{context}'] },
+      ITEM_CHARACTER_FIELD,
       { key: 'ritual.memoryBlock', label: '区块 · 旧记忆', hint: '往事节选的标题行。', vars: ['{digest}'] },
-      { key: 'ritual.opening', label: '开场 · 本轮第一句', hint: '每轮上贡第一条消息，逼管理员先开口。', vars: ['{item}', '{photoNote}', '{name}'], rows: 5 },
-      { key: 'ritual.photoAttached', label: '照片 · 附在用户消息后', hint: '{text} 是用户这句话，{photoNote} 是照片说明。', vars: ['{text}', '{photoNote}'] },
-      { key: 'ritual.photoNote', label: '照片 · 有图时', hint: '{count} 张数，{names} 照片清单。', vars: ['{count}', '{names}'] },
-      { key: 'ritual.photoNoteNoFiles', label: '照片 · 没上传图', hint: '周边没有照片文件时的说明。', vars: [] },
-      { key: 'ritual.photoNoteNoVision', label: '照片 · 模型不能看图', hint: '{model} 是当前模型名。', vars: ['{model}', '{names}'] },
-    ],
-  },
-  {
-    id: 'freechat',
-    label: '日常聊天 / 主动话题',
-    desc: '不在上贡流程里的对话、新藏品开场、每日主动找你说话。',
-    fields: [
-      { key: 'freechat.scene', label: '系统块 · 日期与场景', hint: '日常对话的 system 开头。', vars: ['{date}', '{name}'] },
-      { key: 'freechat.tools', label: '系统块 · 工具权限', hint: '日常对话里查记忆的说明。', vars: [] },
-      { key: 'freechat.output', label: '系统块 · 输出要求', hint: '只输出要对用户说的话。', vars: ['{name}'] },
-      { key: 'freechat.collectionBlock', label: '区块 · 收藏室', hint: '收藏室摘要的标题行。', vars: ['{digest}'] },
-      { key: 'freechat.characterBlock', label: '区块 · 角色档案', hint: '角色摘要的标题行。', vars: ['{digest}'] },
-      { key: 'freechat.itemBlock', label: '区块 · 聚焦周边', hint: '某段对话绑定周边时的标题行。', vars: ['{context}'] },
-      { key: 'freechat.memoryBlock', label: '区块 · 旧记忆', hint: '往事节选的标题行。', vars: ['{digest}'] },
-      { key: 'freechat.openingItem', label: '开场 · 藏品话题', hint: '打开一段围绕某款周边的对话。', vars: ['{name}', '{item}', '{context}'], rows: 5 },
-      { key: 'freechat.openingDaily', label: '开场 · 日常', hint: '打开收藏室时管理员主动开口。', vars: ['{name}'], rows: 4 },
-      { key: 'freechat.photoNote', label: '照片 · 随消息附图', hint: '{names} 是照片清单。', vars: ['{names}'] },
-      { key: 'freechat.itemIntroCreate', label: '藏品 · 新入库', hint: '记录一款新藏品后主动开场。', vars: ['{name}', '{item}', '{context}'], rows: 6 },
-      { key: 'freechat.itemIntroUpdate', label: '藏品 · 资料更新', hint: '{changes} 是前后差异。', vars: ['{name}', '{item}', '{changes}', '{context}'], rows: 7 },
-      { key: 'freechat.proactive', label: '每日主动话题', hint: '{time} 是设定的时间。', vars: ['{time}', '{name}'], rows: 5 },
+      { key: 'ritual.output', label: '系统块 · 输出要求', hint: '规定管理员回复的形式。有可查看的照片时，应用随后加上文字版照片清单。', vars: ['{name}'] },
+      { key: 'ritual.photoNoteNoFiles', label: '系统块 · 没上传图', hint: '没有照片时，这段说明接在输出要求后，也可填入消息的 {photoNote}。', vars: [] },
+      { key: 'ritual.opening', label: '开场 · 本阶段第一句', hint: '告诉管理员本阶段抽中了哪款周边，并让它先开口。', vars: ['{item}', '{photoNote}', '{name}'], rows: 5 },
+      { key: 'ritual.photoNote', label: '对话 · 按需看图说明', hint: '有可查看的照片时填入消息的 {photoNote}。', vars: ['{count}', '{names}'] },
+      { key: 'ritual.photoAttached', label: '对话 · 最新用户消息', hint: '接在本阶段已发生的对话后。{text} 是用户刚发的话，可用 {photoNote} 插入照片说明。', vars: ['{text}', '{photoNote}'] },
     ],
   },
   {
     id: 'summary',
     label: '记忆整理',
-    desc: '每次上贡结束后，用一次独立的小请求把这段对话写成记忆摘要。',
+    desc: '阶段归档时，单独发送整理指令和该阶段的对话记录。',
     fields: [
-      { key: 'summary.system', label: '记忆整理员指令', hint: '标题里写了 140 字上限，改这里就能改摘要长度。', vars: [], rows: 5 },
+      { key: 'summary.system', label: '记忆整理员指令', hint: '这里可调整摘要的写法和目标长度。', vars: [], rows: 5 },
+    ],
+  },
+  {
+    id: 'freechat',
+    label: '日常聊天 / 主动话题',
+    desc: '先发系统提示和已有对话，再按场景选用开场指令。',
+    fields: [
+      { key: 'freechat.scene', label: '系统块 · 日期与场景', hint: '接在人格底色后。', vars: ['{date}', '{name}'] },
+      { key: 'freechat.collectionBlock', label: '区块 · 收藏室', hint: '收藏室摘要的标题行。', vars: ['{digest}'] },
+      { key: 'freechat.characterBlock', label: '区块 · 收藏室的角色摘要', hint: '有角色档案时，插入收藏室的角色概况。', vars: ['{digest}'] },
+      { key: 'freechat.itemBlock', label: '区块 · 聚焦周边', hint: '某段对话绑定周边时，插入该周边的资料。', vars: ['{context}'] },
+      ITEM_CHARACTER_FIELD,
+      { key: 'freechat.memoryBlock', label: '区块 · 旧记忆', hint: '往事节选的标题行。', vars: ['{digest}'] },
+      { key: 'freechat.tools', label: '系统块 · 工具权限', hint: '说明管理员可以查询藏品和过去的对话。', vars: [] },
+      { key: 'freechat.output', label: '系统块 · 输出要求', hint: '规定管理员回复的形式。有可查看的照片时，应用随后加上文字版照片清单。', vars: ['{name}'] },
+      { key: 'freechat.openingItem', label: '开场 · 藏品话题', hint: '打开一段围绕某款周边的对话。', vars: ['{name}', '{item}', '{context}'], rows: 5 },
+      { key: 'freechat.openingDaily', label: '开场 · 日常', hint: '普通聊天开始且还没有对话记录时使用。', vars: ['{name}'], rows: 4 },
+      { key: 'freechat.itemIntroCreate', label: '藏品 · 新入库', hint: '记录一款新藏品后主动开场。', vars: ['{name}', '{item}', '{context}'], rows: 6 },
+      { key: 'freechat.itemIntroUpdate', label: '藏品 · 资料更新', hint: '{changes} 是前后差异。', vars: ['{name}', '{item}', '{changes}', '{context}'], rows: 7 },
+      { key: 'freechat.proactive', label: '每日主动话题', hint: '{time} 是设定的时间。', vars: ['{time}', '{name}'], rows: 5 },
+      { key: 'freechat.photoNote', label: '主动开场 · 照片说明', hint: '主动开场且有可查看的藏品照片时，接在开场指令后。', vars: ['{names}'] },
     ],
   },
 ];

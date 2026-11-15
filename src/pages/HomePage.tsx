@@ -89,10 +89,10 @@ export function HomePage({
         </button>
       )}
 
-      {config && !config.apiKeySet && (
+      {config && (!config.apiKeySet || !config.visionModelReady) && (
         <button type="button" className="banner banner-rose" onClick={onOpenSettings}>
           <IconAlert size={16} />
-          <span>还没填 DeepSeek API Key，管理员暂时开不了口。</span>
+          <span>{config.apiKeySet ? '请保存能通过看图验证的模型。' : '还没填 DeepSeek API Key，管理员暂时开不了口。'}</span>
           <span className="banner-cta">去设置 <IconChevronRight size={14} /></span>
         </button>
       )}

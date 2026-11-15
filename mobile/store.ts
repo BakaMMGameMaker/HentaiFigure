@@ -2,6 +2,7 @@ import type {
   Character, ChatMessage, ChatThread, ChatThreadSummary, Config, FreeChatState, Item, Session,
 } from '../src/types';
 import { PROMPT_DEFAULTS, resolvePrompts } from '../src/prompts';
+import { DEEPSEEK_URL, DEFAULT_VISION_MODEL, isVisionReady, migrateVisionModel } from '../electron/lib/vision-config.mjs';
 
 const DB_NAME = 'hentaifigure';
 const DB_VERSION = 2;
@@ -13,6 +14,7 @@ export const DEFAULT_SYSTEM_PROMPT = PROMPT_DEFAULTS.persona || '';
 export interface MobileConfig {
   baseUrl: string;
   model: string;
+  verifiedVision?: string;
   temperature: number;
   maxPhotosPerRequest: number;
   imageDetail: 'high' | 'low';
@@ -40,8 +42,8 @@ export interface FreeChat {
 const DEFAULT_THREAD_TITLE = '新的对话';
 
 const DEFAULT_CONFIG: MobileConfig = {
-  baseUrl: 'https://api.deepseek.com',
-  model: 'deepseek-flash',
+  baseUrl: DEEPSEEK_URL,
+  model: DEFAULT_VISION_MODEL,
   temperature: 1.3,
   maxPhotosPerRequest: 6,
   imageDetail: 'high',
@@ -203,8 +205,15 @@ export class MobileStore {
     const sessions = await idbGet<Record<string, Session>>(this.db, 'sessions');
     const freechat = await idbGet<any>(this.db, 'freechat');
     this.config = { ...DEFAULT_CONFIG, ...(config || {}) };
+    const model = migrateVisionModel(this.config);
+    let configChanged = model !== this.config.model;
+    this.config.model = model;
     if (!this.config.prompts || typeof this.config.prompts !== 'object' || Array.isArray(this.config.prompts)) {
       this.config.prompts = {};
+    }
+    if (Object.hasOwn(this.config.prompts, 'ritual.photoNoteNoVision')) {
+      delete this.config.prompts['ritual.photoNoteNoVision'];
+      configChanged = true;
     }
     this.config.devPromptMode = Boolean(this.config.devPromptMode);
     // 旧版本把人格底色存在 systemPrompt 里：和默认值不同就搬进覆盖层。
@@ -251,7 +260,7 @@ export class MobileStore {
     if (this.syncCharactersFromItems()) migrated = true;
     if (migrated) await this.saveItems();
 
-    if (!config) await this.saveConfig();
+    if (!config || configChanged) await this.saveConfig();
     await this.saveFreeChat();
     if (!characters) await this.saveCharacters();
   }
@@ -299,6 +308,7 @@ export class MobileStore {
     return {
       baseUrl: this.config.baseUrl,
       model: this.config.model,
+      visionModelReady: isVisionReady(this.config),
       temperature: this.config.temperature,
       maxPhotosPerRequest: this.config.maxPhotosPerRequest,
       imageDetail: this.config.imageDetail,
@@ -369,7 +379,7 @@ export class MobileStore {
 
   async updateConfig(patch: Partial<MobileConfig> & { apiKey?: string; clearApiKey?: boolean }) {
     const allowed: (keyof MobileConfig)[] = [
-      'baseUrl', 'model', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
+      'baseUrl', 'model', 'verifiedVision', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
       'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
       'userName', 'managerAvatar',
     ];

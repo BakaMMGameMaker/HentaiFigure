@@ -1,4 +1,7 @@
 import type { MobileConfig } from './store';
+import { DEEPSEEK_URL, assertVisionReady, runVisionCheck, validateVisionModel } from '../electron/lib/vision-config.mjs';
+
+type ConnectionConfig = Pick<MobileConfig, 'baseUrl' | 'model' | 'verifiedVision'> & { temperature?: number };
 
 export class ApiError extends Error {
   status = 0;
@@ -28,18 +31,9 @@ export function friendlyError(err: unknown): string {
   return e.message || '请求失败';
 }
 
-export function modelSupportsVision(model: string): boolean {
-  const name = String(model || '').toLowerCase();
-  if (!name) return true;
-  if (name.includes('deepseek')) {
-    return name.includes('flash') || name.includes('vision') || name.includes('vl') || name.includes('v4');
-  }
-  return true;
-}
-
 export function normalizeBaseUrl(url: string): string {
-  const base = String(url || 'https://api.deepseek.com').trim().replace(/\/+$/, '');
-  return base || 'https://api.deepseek.com';
+  const base = String(url || DEEPSEEK_URL).trim().replace(/\/+$/, '');
+  return base || DEEPSEEK_URL;
 }
 
 function extractErrorMessage(text: string): string {
@@ -64,7 +58,7 @@ export interface ChatResult {
   finishReason: string;
 }
 
-export async function requestChat({
+async function sendChatRequest({
   config,
   apiKey,
   messages,
@@ -73,7 +67,7 @@ export async function requestChat({
   temperature,
   signal,
 }: {
-  config: MobileConfig;
+  config: ConnectionConfig;
   apiKey: string;
   messages: any[];
   tools?: any[];
@@ -83,10 +77,10 @@ export async function requestChat({
 }): Promise<ChatResult> {
   if (!apiKey) throw new ApiError('missing key', { code: 'NO_KEY' });
   const payload: Record<string, any> = {
-    model: config.model || 'deepseek-flash',
+    model: config.model,
     messages,
     stream: false,
-    temperature: typeof temperature === 'number' ? temperature : config.temperature,
+    temperature: temperature ?? config.temperature ?? 1.3,
   };
   if (tools?.length) {
     payload.tools = tools;
@@ -124,6 +118,11 @@ export async function requestChat({
   };
 }
 
+export async function requestChat(options: Parameters<typeof sendChatRequest>[0]): Promise<ChatResult> {
+  assertVisionReady(options.config);
+  return sendChatRequest(options);
+}
+
 export async function completeText({
   config,
   apiKey,
@@ -141,15 +140,40 @@ export async function completeText({
   return result.content;
 }
 
-export async function testConnection(config: MobileConfig, apiKey: string) {
-  const text = await completeText({
-    config,
-    apiKey,
-    messages: [{ role: 'user', content: '只回复两个字：在的' }],
-    maxTokens: 16,
-    temperature: 0,
+function renderVisionTestImage(colors: string[]) {
+  const canvas = document.createElement('canvas');
+  const barWidth = 48;
+  canvas.width = colors.length * barWidth;
+  canvas.height = 64;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('无法生成看图测试图片。');
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  colors.forEach((color, index) => {
+    context.fillStyle = color;
+    context.fillRect(index * barWidth, 0, barWidth - 4, canvas.height);
   });
-  return { ok: true, reply: text.trim(), model: config.model };
+  return canvas.toDataURL('image/png');
+}
+
+export async function testConnection(config: ConnectionConfig, apiKey: string) {
+  validateVisionModel(config);
+  const reply = await runVisionCheck({
+    renderImage: renderVisionTestImage,
+    complete: async (messages) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+      try {
+        const result = await sendChatRequest({
+          config, apiKey, messages, maxTokens: 512, temperature: 0, signal: controller.signal,
+        });
+        return result.content;
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+  });
+  return { ok: true, reply, model: config.model };
 }
 
 export function sleep(ms: number) {

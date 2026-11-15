@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const { DEEPSEEK_URL, assertVisionReady, runVisionCheck, validateVisionModel } = require('./vision-config.mjs');
 
 const IMAGE_CACHE = new Map();
 const MAX_CACHE_ENTRIES = 24;
@@ -30,8 +31,8 @@ function friendlyError(err) {
 }
 
 function normalizeBaseUrl(baseUrl) {
-  const base = String(baseUrl || 'https://api.deepseek.com').trim().replace(/\/+$/, '');
-  return base || 'https://api.deepseek.com';
+  const base = String(baseUrl || DEEPSEEK_URL).trim().replace(/\/+$/, '');
+  return base || DEEPSEEK_URL;
 }
 
 function dataUrlFromFile(filePath, maxDim = 1400) {
@@ -109,10 +110,11 @@ async function streamChat({
   maxTokens,
 }) {
   if (!apiKey) throw new ApiError('missing key', { code: 'NO_KEY' });
+  assertVisionReady(config);
 
   const url = `${normalizeBaseUrl(config.baseUrl)}/chat/completions`;
   const payload = {
-    model: config.model || 'deepseek-flash',
+    model: config.model,
     messages,
     stream: true,
     temperature: typeof config.temperature === 'number' ? config.temperature : 1.3,
@@ -244,7 +246,7 @@ async function streamChat({
   };
 }
 
-async function completeText({ config, apiKey, messages, maxTokens = 400, temperature, signal }) {
+async function requestCompletion({ config, apiKey, messages, maxTokens = 400, temperature, signal }) {
   if (!apiKey) throw new ApiError('missing key', { code: 'NO_KEY' });
   const url = `${normalizeBaseUrl(config.baseUrl)}/chat/completions`;
   let res;
@@ -256,7 +258,7 @@ async function completeText({ config, apiKey, messages, maxTokens = 400, tempera
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: config.model || 'deepseek-flash',
+        model: config.model,
         messages,
         stream: false,
         temperature: typeof temperature === 'number' ? temperature : 0.4,
@@ -279,15 +281,37 @@ async function completeText({ config, apiKey, messages, maxTokens = 400, tempera
   return json?.choices?.[0]?.message?.content || '';
 }
 
+function completeText(options) {
+  assertVisionReady(options.config);
+  return requestCompletion(options);
+}
+
+function renderVisionTestImage(colors) {
+  const { nativeImage } = require('electron');
+  const barWidth = 48;
+  const width = colors.length * barWidth;
+  const height = 64;
+  const pixels = Buffer.alloc(width * height * 4, 255);
+  for (const [index, hex] of colors.entries()) {
+    const pixel = (parseInt(hex.slice(1), 16) | 0xff000000) >>> 0;
+    for (let row = 0; row < height; row += 1) {
+      const start = (row * width + index * barWidth) * 4;
+      for (let col = 0; col < barWidth - 4; col += 1) pixels.writeUInt32LE(pixel, start + col * 4);
+    }
+  }
+  const image = nativeImage.createFromBitmap(pixels, { width, height });
+  return image.toDataURL();
+}
+
 async function testConnection({ config, apiKey }) {
-  const text = await completeText({
-    config,
-    apiKey,
-    messages: [{ role: 'user', content: '只回复两个字：在的' }],
-    maxTokens: 16,
-    temperature: 0,
+  validateVisionModel(config);
+  const reply = await runVisionCheck({
+    renderImage: renderVisionTestImage,
+    complete: (messages) => requestCompletion({
+      config, apiKey, messages, maxTokens: 512, temperature: 0, signal: AbortSignal.timeout(25000),
+    }),
   });
-  return { ok: true, reply: text.trim(), model: config.model };
+  return { ok: true, reply, model: config.model };
 }
 
 module.exports = {

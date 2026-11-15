@@ -57,6 +57,7 @@ export interface ChatMessage {
   ts: number;
   reasoning?: string;
   toolTrace?: { name: string; args: Record<string, unknown>; result: string }[];
+  viewedPhotoIds?: string[];
 }
 
 export interface ItemChange {
@@ -124,6 +125,7 @@ export interface PromptBundle {
 export interface Config {
   baseUrl: string;
   model: string;
+  visionModelReady: boolean;
   temperature: number;
   maxPhotosPerRequest: number;
   imageDetail: 'high' | 'low';

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, Config, PromptBundle, UpdateInfo } from '../types';
 import { PROMPT_SCHEMA } from '../prompts';
+import { DEFAULT_VISION_MODEL, isDeepSeekEndpoint } from '../../electron/lib/vision-config.mjs';
 import { ManagerAvatar, Modal, Row, SheetHeader, Spinner, Switch, confirmDialog } from './ui';
 import {
   IconAlert, IconChat, IconCheck, IconCircleCheck, IconClock, IconDownload, IconFolder, IconInfo,
@@ -99,6 +100,9 @@ export function SettingsModal({
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
+  const officialEndpoint = isDeepSeekEndpoint(form.baseUrl);
+  const selectedModel = officialEndpoint ? DEFAULT_VISION_MODEL : form.model;
+
   const save = async () => {
     setErr('');
     setSaving(true);
@@ -106,7 +110,8 @@ export function SettingsModal({
       const patch: Record<string, unknown> = {
         ...form,
         baseUrl: form.baseUrl.trim(),
-        model: form.model.trim(),
+        model: selectedModel.trim(),
+        verifyVision: tab === 'api',
         userName: form.userName.trim() || '杂鱼',
         managerAvatar: avatar,
       };
@@ -114,6 +119,7 @@ export function SettingsModal({
       else if (apiKey.trim()) patch.apiKey = apiKey.trim();
       const saved = await window.hf.config.save(patch);
       onSaved(saved);
+      setForm((prev) => ({ ...prev, model: saved.model }));
       setApiKey('');
       setClearKey(false);
       toast('设置已保存。', 'ok');
@@ -131,11 +137,11 @@ export function SettingsModal({
       const result = await window.hf.config.test({
         apiKey: apiKey.trim() || undefined,
         baseUrl: form.baseUrl.trim(),
-        model: form.model.trim(),
+        model: selectedModel.trim(),
       });
       setTestResult(
         result.ok
-          ? { ok: true, text: `连接成功 · ${result.model} 回复「${result.reply || '…'}」` }
+          ? { ok: true, text: `看图验证通过 · ${result.model}` }
           : { ok: false, text: result.message || '连接失败' }
       );
     } catch (e) {
@@ -433,7 +439,8 @@ export function SettingsModal({
                         className="input"
                         type="password"
                         value={apiKey}
-                        onChange={(e) => { setApiKey(e.target.value); setClearKey(false); }}
+                        onChange={(e) => { setApiKey(e.target.value); setClearKey(false); setTestResult(null); }}
+                        disabled={testing || saving}
                         placeholder={config.apiKeySet ? `已保存 ${config.apiKeyPreview}，留空则不改` : 'sk-…'}
                         autoComplete="off"
                       />
@@ -441,7 +448,8 @@ export function SettingsModal({
                         <button
                           type="button"
                           className={cx('btn btn-sm', clearKey ? 'btn-danger' : 'btn-ghost')}
-                          onClick={() => setClearKey((v) => !v)}
+                          onClick={() => { setClearKey((v) => !v); setTestResult(null); }}
+                          disabled={testing || saving}
                         >
                           {clearKey ? '确定清除？' : '清除'}
                         </button>
@@ -455,21 +463,30 @@ export function SettingsModal({
                   <div className="field-row">
                     <label className="field">
                       <span className="field-label">API 地址</span>
-                      <input className="input" value={form.baseUrl} onChange={(e) => set('baseUrl', e.target.value)} placeholder="https://api.deepseek.com" />
+                      <input className="input" value={form.baseUrl} onChange={(e) => { set('baseUrl', e.target.value); setTestResult(null); }} disabled={testing || saving} placeholder="https://api.deepseek.com" />
                     </label>
                     <label className="field">
                       <span className="field-label">模型</span>
-                      <input className="input" value={form.model} onChange={(e) => set('model', e.target.value)} placeholder="deepseek-flash" />
+                      <input
+                        className="input"
+                        value={selectedModel}
+                        onChange={(e) => { set('model', e.target.value); setTestResult(null); }}
+                        readOnly={officialEndpoint}
+                        disabled={testing || saving}
+                        placeholder={DEFAULT_VISION_MODEL}
+                      />
                     </label>
                   </div>
                   <p className="muted small">
-                    默认 <code>deepseek-flash</code>，支持看图。换用纯文本模型时，管理员只会根据照片标签和商品详情说话。
+                    {officialEndpoint
+                      ? <>DeepSeek 官方接口使用支持看图的 <code>{DEFAULT_VISION_MODEL}</code>。</>
+                      : '自定义接口需要识别测试图片，验证通过后才会保存模型。'}
                   </p>
 
                   <div className="test-row">
-                    <button type="button" className="btn btn-soft" onClick={() => void test()} disabled={testing}>
+                    <button type="button" className="btn btn-soft" onClick={() => void test()} disabled={testing || saving || clearKey}>
                       {testing ? <Spinner size={15} /> : <IconSparkles size={15} />}
-                      测试连接
+                      测试看图
                     </button>
                     {testResult && (
                       <span className={cx('test-result', testResult.ok ? 'ok' : 'error')}>
@@ -484,7 +501,7 @@ export function SettingsModal({
                   <div className="block-title">看图与随机性</div>
                   <label className="field">
                     <span className="field-label">
-                      <span>每轮附送照片</span>
+                      <span>每轮看图上限</span>
                       <em>{form.maxPhotosPerRequest} 张</em>
                     </span>
                     <input
@@ -496,7 +513,7 @@ export function SettingsModal({
                       value={form.maxPhotosPerRequest}
                       onChange={(e) => set('maxPhotosPerRequest', Number(e.target.value))}
                     />
-                    <p className="muted small">每次回复时附上她几张照片给模型。越多越贵，但细节也更足。</p>
+                    <p className="muted small">管理员根据话题点选照片。这个值限制每条回复最多能看几张。</p>
                   </label>
                   <div className="field-row">
                     <label className="field">
@@ -521,7 +538,7 @@ export function SettingsModal({
                         <button type="button" className={form.imageDetail === 'high' ? 'active' : ''} onClick={() => set('imageDetail', 'high')}>高清</button>
                         <button type="button" className={form.imageDetail === 'low' ? 'active' : ''} onClick={() => set('imageDetail', 'low')}>省流</button>
                       </div>
-                      <p className="muted small">省流会先缩到 512×512，更便宜更快。</p>
+                      <p className="muted small">使用 DeepSeek 时，省流会在模型处理前将图片缩到 512×512。</p>
                     </div>
                   </div>
                 </div>
@@ -633,7 +650,7 @@ export function SettingsModal({
                 <div className="settings-section">
                   <div className="block-title">提示词总览</div>
                   <p className="muted small">
-                    这里包括管理员每一次请求真正发出去的每一条指令，除了 API 连接测试以外都可以改。改完点最下面的「保存提示词」，只影响当前设备。
+                    各组内的模板按发给模型的顺序排列。修改后点底部的「保存提示词」。
                   </p>
                   <div className="prompt-meta">
                     <span>{Object.keys(promptBundle?.defaults || {}).length} 条指令</span>
@@ -900,7 +917,7 @@ export function SettingsModal({
             <div className="sheet-error">{err}</div>
             <div className="sheet-actions">
               {showSaveFooter && (
-                <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={saving}>
+                <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={saving || testing}>
                   {saving ? <Spinner size={15} /> : <IconCheck size={16} />}
                   保存设置
                 </button>

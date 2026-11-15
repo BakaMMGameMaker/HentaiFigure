@@ -11,6 +11,7 @@ import {
 } from '../icons';
 
 const TOOL_LABELS: Record<string, string> = {
+  view_item_photos: '查看藏品照片',
   search_memory: '翻找旧记忆',
   read_memory: '重读某段对话',
   list_events: '翻阅上贡日历',
