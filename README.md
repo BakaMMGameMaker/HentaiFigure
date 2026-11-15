@@ -141,7 +141,6 @@ Windows 便携版可以从 [GitHub Releases](https://github.com/BakaMMGameMaker/
 - 应用不会把数据写进程序目录，所以**更新程序不会丢收藏和记忆**。
 - 每次自动更新、导入备份前都会先在本机备份。
 - 设置 → 数据：可以打开目录、立即备份、导出 ZIP、导入 ZIP。
-- 「照片、记忆与 API Key 都只留在这台电脑上」这句话现在放在 **设置 → 关于**，不再显示在首页。
 - 照片、对话、API Key 都不会上传到除你配置的 DeepSeek API 之外的任何地方。
 - 对话内容由 DeepSeek 生成；删除数据目录等于清空整个收藏室。
 
@@ -149,11 +148,9 @@ Windows 便携版可以从 [GitHub Releases](https://github.com/BakaMMGameMaker/
 
 ## 自动更新
 
-更新源已写死为官方仓库：
+更新源：
 
 **https://github.com/BakaMMGameMaker/HentaiFigure**
-
-不需要在设置里填写任何仓库地址，也不开放更新源配置。应用只替换程序文件，不碰数据目录。
 
 - **启动时自动检查**：桌面启动约 3 秒、手机启动约 5 秒后检查一次；可以在「设置 → 更新」关闭。
 - **源码方式（`启动.bat`）**：当前目录是官方仓库的 git clone 时，会 `git fetch` 并比较 `origin/master`。点「更新并重启」会：备份数据 → `git fetch` → `git reset --hard @{u}` → 必要时 `npm install` → `npm run build` → 自动重启。
@@ -205,7 +202,7 @@ npm run android:apk
 
 ### 手机上的 GitHub 更新检查
 
-「设置 → 更新」会显示写死的官方仓库地址。打开「启动时自动检查」后，手机会读取 GitHub Release（或 master 分支的 `package.json`）判断是否有新版本。
+「设置 → 更新」会显示官方仓库地址。打开「启动时自动检查」后，手机会读取 GitHub Release（或 master 分支的 `package.json`）判断是否有新版本。
 
 发现新版本后，进入发布页下载同签名的新版 APK 并覆盖安装，即可保留应用里的收藏和记忆。
 
