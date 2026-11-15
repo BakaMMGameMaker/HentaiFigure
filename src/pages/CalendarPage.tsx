@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CalendarDay, DayDetail } from '../types';
 import { PHASE_META, formatDateCN, todayKey, weekdayCN } from '../constants';
-import { formatTime } from '../utils';
+import { cx, formatTime } from '../utils';
 import { SessionModal } from '../components/SessionModal';
 import { Spinner } from '../components/ui';
 import {
@@ -64,7 +64,6 @@ export function CalendarPage({
 
   const cells = useMemo(() => monthCells(cursor.y, cursor.m), [cursor]);
   const completedDays = Object.values(days).filter((d) => d.hasRitual).length;
-  const today = todayKey();
   const todayDay = now.getDate();
   const isCurrentMonth = cursor.y === now.getFullYear() && cursor.m === now.getMonth() + 1;
 
@@ -81,41 +80,44 @@ export function CalendarPage({
   };
 
   return (
-    <div className="page calendar-page">
+    <div className="page calendar">
       <header className="page-head">
         <div>
           <div className="eyebrow">DAILY OFFERING</div>
           <h1>上贡日历</h1>
-          <p className="page-sub">
-            每一次上贡都会在这里留下一个勾。管理员记得所有日子，你也可以点开看。
-          </p>
+          <p className="page-sub">每一次上贡都会在这里留下一个勾。管理员记得所有日子，你也可以点开看。</p>
         </div>
-        <button className="btn btn-ghost" onClick={goToday}>
+        <button type="button" className="btn btn-ghost" onClick={goToday}>
           <IconCalendar size={15} /> 回到今天
         </button>
       </header>
 
-      <div className="calendar-layout">
-        <section className="calendar-card">
-          <div className="calendar-head">
-            <button className="icon-button" onClick={() => changeMonth(-1)} aria-label="上个月"><IconChevronLeft size={19} /></button>
-            <div className="calendar-title">
+      <div className="cal-layout">
+        <section className="panel cal-card">
+          <div className="cal-head">
+            <button type="button" className="icon-btn" onClick={() => changeMonth(-1)} aria-label="上个月">
+              <IconChevronLeft size={19} />
+            </button>
+            <div className="cal-title">
               <strong>{cursor.y}</strong>
               <span>{String(cursor.m).padStart(2, '0')} 月</span>
             </div>
-            <button className="icon-button" onClick={() => changeMonth(1)} aria-label="下个月"><IconChevronRight size={19} /></button>
+            <button type="button" className="icon-btn" onClick={() => changeMonth(1)} aria-label="下个月">
+              <IconChevronRight size={19} />
+            </button>
           </div>
 
-          <div className="calendar-legend">
+          <div className="cal-legend">
             <span><i className="legend-check"><IconCheck size={9} /></i> 已上贡</span>
             <span><i className="legend-dot" /> 有记录</span>
-            <span className="calendar-count">本月 {completedDays} 天</span>
+            <span className="cal-count">本月 {completedDays} 天</span>
           </div>
 
-          <div className="calendar-weekdays">
+          <div className="cal-weekdays">
             {['一', '二', '三', '四', '五', '六', '日'].map((d) => <span key={d}>{d}</span>)}
           </div>
-          <div className="calendar-grid">
+
+          <div className="cal-grid">
             {cells.map((dayNum, index) => {
               if (!dayNum) return <div className="day-cell blank" key={`b${index}`} />;
               const key = `${cursor.y}-${String(cursor.m).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
@@ -123,14 +125,19 @@ export function CalendarPage({
               const isToday = isCurrentMonth && dayNum === todayDay;
               return (
                 <button
+                  type="button"
                   key={key}
-                  className={`day-cell ${info?.hasRitual ? 'has-ritual' : ''} ${info?.sessions?.length ? 'has-sessions' : ''} ${selected === key ? 'selected' : ''} ${isToday ? 'today' : ''}`}
+                  className={cx(
+                    'day-cell',
+                    info?.hasRitual && 'has-ritual',
+                    info?.sessions?.length ? 'has-sessions' : '',
+                    selected === key && 'selected',
+                    isToday && 'today',
+                  )}
                   onClick={() => setSelected(key)}
                 >
                   <span className="day-number">{dayNum}</span>
-                  {info?.hasRitual && (
-                    <span className="day-stamp"><IconCheck size={12} /></span>
-                  )}
+                  {info?.hasRitual && <span className="day-stamp"><IconCheck size={11} /></span>}
                   {!info?.hasRitual && info?.sessions?.length ? <span className="day-dot" /> : null}
                   {info?.hasRitual && (
                     <span className="day-mini">
@@ -143,54 +150,54 @@ export function CalendarPage({
           </div>
         </section>
 
-        <aside className="calendar-detail">
+        <aside className="panel cal-detail">
           {detailLoading ? (
-            <div className="calendar-detail-loading"><Spinner /> 翻着日历…</div>
+            <div className="cal-empty"><Spinner /> 翻着日历…</div>
           ) : !selected ? (
-            <div className="calendar-detail-empty">
-              <IconCalendar size={30} />
+            <div className="cal-empty">
+              <IconCalendar size={28} />
               <p>点一个日子<br />看看那天她和你说了什么。</p>
             </div>
           ) : detail ? (
             <>
-              <div className="detail-day-head">
-                <div className="eyebrow">{weekdayCN(selected)}</div>
-                <h2>{formatDateCN(selected)}</h2>
+              <div className="cal-detail-head">
+                <div>
+                  <div className="eyebrow">{weekdayCN(selected)}</div>
+                  <h2>{formatDateCN(selected)}</h2>
+                </div>
                 {detail.record?.completedAt ? (
-                  <span className="day-complete-stamp">已上贡</span>
+                  <span className="pill tone-owned">已上贡</span>
                 ) : detail.record ? (
-                  <span className="day-progress-stamp">未完成</span>
+                  <span className="pill tone-pending">未完成</span>
                 ) : (
-                  <span className="day-empty-stamp">平静的一天</span>
+                  <span className="pill">平静的一天</span>
                 )}
               </div>
 
               {detail.sessions.length ? (
                 <div className="day-sessions">
                   {detail.sessions.map((session) => (
-                    <button className="day-session" key={session.id} onClick={() => setSessionId(session.id)}>
+                    <button type="button" className="day-session" key={session.id} onClick={() => setSessionId(session.id)}>
                       <div className="day-session-top">
-                        <span className={`phase-dot phase-${session.phase}`} />
-                        <span className="day-session-phase">{PHASE_META[session.phase]?.label || session.phase}</span>
+                        <span className={cx('pill', `phase-${session.phase}`)}>{PHASE_META[session.phase]?.label || session.phase}</span>
                         <span className="day-session-time">{formatTime(session.startedAt).slice(11)}</span>
                       </div>
                       <div className="day-session-item">{session.itemName}</div>
                       <p>{session.summary || '这段对话还没有摘要。'}</p>
-                      <span className="day-session-link">查看对话 <IconChevronRight size={12} /></span>
+                      <span className="link">查看对话 <IconChevronRight size={12} /></span>
                     </button>
                   ))}
                 </div>
               ) : (
-                <div className="calendar-detail-empty">
+                <div className="cal-empty">
                   <IconClock size={26} />
                   <p>这天什么也没发生。<br />灰尘还在，欲望也还在。</p>
                 </div>
               )}
 
               {detail.record?.completedAt && (
-                <div className="day-detail-foot">
-                  <IconSparkles size={14} />
-                  这天完成了当日上贡
+                <div className="cal-detail-foot">
+                  <IconSparkles size={14} /> 这天完成了当日上贡
                 </div>
               )}
             </>
@@ -202,4 +209,3 @@ export function CalendarPage({
     </div>
   );
 }
-

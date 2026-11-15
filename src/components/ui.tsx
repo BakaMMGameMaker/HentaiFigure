@@ -1,42 +1,192 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { photoUrl } from '../constants';
 import type { Photo } from '../types';
-import { IconChevronLeft, IconChevronRight, IconX } from '../icons';
+import { IconAlert, IconChevronLeft, IconChevronRight, IconX } from '../icons';
+import { cx } from '../utils';
+
+/* ------------------------------------------------------------------ */
+/* Responsive helper                                                   */
+/* ------------------------------------------------------------------ */
+
+const NARROW_QUERY = '(max-width: 760px)';
+
+function subscribeNarrow(callback: () => void) {
+  const mq = window.matchMedia(NARROW_QUERY);
+  mq.addEventListener('change', callback);
+  return () => mq.removeEventListener('change', callback);
+}
+
+/** true on phones / very narrow windows. */
+export function useNarrow(): boolean {
+  return useSyncExternalStore(subscribeNarrow, () => window.matchMedia(NARROW_QUERY).matches, () => false);
+}
+
+/* ------------------------------------------------------------------ */
+/* Modal / sheet                                                       */
+/* ------------------------------------------------------------------ */
+
+const modalStack: number[] = [];
+let modalSeq = 0;
 
 export function Modal({
   children,
   onClose,
   className = '',
+  size = 'md',
   closeOnBackdrop = true,
 }: {
   children: ReactNode;
   onClose: () => void;
   className?: string;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   closeOnBackdrop?: boolean;
 }) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
   useEffect(() => {
+    modalSeq += 1;
+    const id = modalSeq;
+    modalStack.push(id);
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      // Only the top-most modal reacts to Escape.
+      if (event.key === 'Escape' && modalStack[modalStack.length - 1] === id) closeRef.current();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    return () => {
+      const at = modalStack.indexOf(id);
+      if (at >= 0) modalStack.splice(at, 1);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
 
   return createPortal(
     <div
-      className="modal-overlay"
-      onMouseDown={(event) => {
+      className="overlay"
+      onPointerDown={(event) => {
         if (closeOnBackdrop && event.target === event.currentTarget) onClose();
       }}
     >
-      <div className={`modal ${className}`} onMouseDown={(e) => e.stopPropagation()}>
+      <div className={cx('sheet', `sheet-${size}`, className)} role="dialog" aria-modal="true">
         {children}
       </div>
     </div>,
     document.body
   );
 }
+
+/** Standard sheet header: title block + close button. */
+export function SheetHeader({
+  eyebrow,
+  title,
+  onClose,
+  onBack,
+  actions,
+}: {
+  eyebrow?: ReactNode;
+  title: ReactNode;
+  onClose?: () => void;
+  onBack?: () => void;
+  actions?: ReactNode;
+}) {
+  return (
+    <header className="sheet-head">
+      {onBack && (
+        <button type="button" className="icon-btn" onClick={onBack} aria-label="返回">
+          <IconChevronLeft size={20} />
+        </button>
+      )}
+      <div className="sheet-head-text">
+        {eyebrow && <div className="eyebrow">{eyebrow}</div>}
+        <h2>{title}</h2>
+      </div>
+      {actions}
+      {onClose && (
+        <button type="button" className="icon-btn" onClick={onClose} aria-label="关闭">
+          <IconX size={19} />
+        </button>
+      )}
+    </header>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* In-app confirm dialog (replaces window.confirm).                    */
+/* Native confirm() steals keyboard focus from the Electron renderer   */
+/* on Windows until the window is re-activated, so never use it.       */
+/* ------------------------------------------------------------------ */
+
+type ConfirmOptions = {
+  title: string;
+  message?: ReactNode;
+  confirmText?: string;
+  cancelText?: string;
+  danger?: boolean;
+};
+
+type ConfirmRequest = ConfirmOptions & { id: number; resolve: (ok: boolean) => void };
+
+let confirmQueue: ConfirmRequest[] = [];
+const confirmListeners = new Set<() => void>();
+let confirmSeq = 0;
+
+function emitConfirm() {
+  for (const listener of confirmListeners) listener();
+}
+
+export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
+  return new Promise((resolve) => {
+    confirmSeq += 1;
+    confirmQueue = [...confirmQueue, { ...options, id: confirmSeq, resolve }];
+    emitConfirm();
+  });
+}
+
+export function ConfirmHost() {
+  const queue = useSyncExternalStore(
+    (cb) => { confirmListeners.add(cb); return () => { confirmListeners.delete(cb); }; },
+    () => confirmQueue,
+    () => confirmQueue,
+  );
+  const current = queue[0];
+  if (!current) return null;
+
+  const settle = (ok: boolean) => {
+    current.resolve(ok);
+    confirmQueue = confirmQueue.filter((item) => item.id !== current.id);
+    emitConfirm();
+  };
+
+  return (
+    <Modal size="sm" onClose={() => settle(false)} className="confirm-sheet">
+      <div className="confirm">
+        <div className={cx('confirm-icon', current.danger && 'danger')}>
+          <IconAlert size={22} />
+        </div>
+        <h3>{current.title}</h3>
+        {current.message && <div className="confirm-message">{current.message}</div>}
+        <div className="confirm-actions">
+          <button type="button" className="btn btn-ghost" onClick={() => settle(false)}>
+            {current.cancelText || '取消'}
+          </button>
+          <button
+            type="button"
+            className={cx('btn', current.danger ? 'btn-danger' : 'btn-primary')}
+            onClick={() => settle(true)}
+            autoFocus
+          >
+            {current.confirmText || '确定'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Small atoms                                                         */
+/* ------------------------------------------------------------------ */
 
 export function Chip({ children, tone = 'default' }: { children: ReactNode; tone?: string }) {
   return <span className={`chip chip-${tone}`}>{children}</span>;
@@ -54,17 +204,56 @@ export function EmptyState({
   icon?: ReactNode;
 }) {
   return (
-    <div className="empty-state">
-      {icon && <div className="empty-state-icon">{icon}</div>}
-      <div className="empty-state-title">{title}</div>
-      {desc && <div className="empty-state-desc">{desc}</div>}
-      {action && <div className="empty-state-action">{action}</div>}
+    <div className="empty">
+      {icon && <div className="empty-icon">{icon}</div>}
+      <div className="empty-title">{title}</div>
+      {desc && <div className="empty-desc">{desc}</div>}
+      {action && <div className="empty-action">{action}</div>}
     </div>
   );
 }
 
 export function Spinner({ size = 18 }: { size?: number }) {
   return <span className="spinner" style={{ width: size, height: size }} />;
+}
+
+export function Switch({
+  on,
+  onChange,
+  disabled,
+  label,
+}: {
+  on: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      className={cx('switch', on && 'on')}
+      onClick={() => onChange(!on)}
+      disabled={disabled}
+    >
+      <span />
+    </button>
+  );
+}
+
+/** A settings-style row: title + description on the left, control on the right. */
+export function Row({ title, desc, children }: { title: ReactNode; desc?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="row">
+      <div className="row-text">
+        <strong>{title}</strong>
+        {desc && <small>{desc}</small>}
+      </div>
+      {children && <div className="row-control">{children}</div>}
+    </div>
+  );
 }
 
 /** 管理员头像：设置了自定义头像就显示图片，否则显示「管」字。 */
@@ -80,18 +269,24 @@ export function ManagerAvatar({
   style?: CSSProperties;
 }) {
   return (
-    <span className={`manager-avatar ${className}`.trim()} style={style}>
-      {src ? <img src={src} alt="管理员头像" /> : <span className="manager-avatar-glyph">{glyph}</span>}
+    <span className={`avatar ${className}`.trim()} style={style}>
+      {src ? <img src={src} alt="管理员头像" /> : <span className="avatar-glyph">{glyph}</span>}
     </span>
   );
 }
 
 export function Toast({ text, kind }: { text: string; kind?: 'ok' | 'error' | 'info' }) {
   return (
-    <div className={`toast toast-${kind || 'info'}`}>
+    <div className={`toast toast-${kind || 'info'}`} role="status">
       <span className="toast-dot" />
       <span>{text}</span>
     </div>
+  );
+}
+
+export function TypingDots() {
+  return (
+    <div className="typing"><span /><span /><span /></div>
   );
 }
 
@@ -109,45 +304,45 @@ export function PhotoLightbox({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') { event.stopImmediatePropagation(); onClose(); }
       if (event.key === 'ArrowLeft') setIndex((i) => (i - 1 + photos.length) % photos.length);
       if (event.key === 'ArrowRight') setIndex((i) => (i + 1) % photos.length);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose, photos.length]);
 
   if (!photo) return null;
 
   return createPortal(
-    <div className="lightbox" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="lightbox-inner">
-        <button className="lightbox-close" onClick={onClose} aria-label="关闭">
-          <IconX size={22} />
-        </button>
-        {photos.length > 1 && (
-          <>
-            <button
-              className="lightbox-nav left"
-              onClick={() => setIndex((i) => (i - 1 + photos.length) % photos.length)}
-              aria-label="上一张"
-            >
-              <IconChevronLeft size={26} />
-            </button>
-            <button
-              className="lightbox-nav right"
-              onClick={() => setIndex((i) => (i + 1) % photos.length)}
-              aria-label="下一张"
-            >
-              <IconChevronRight size={26} />
-            </button>
-          </>
-        )}
-        <img className="lightbox-image" src={photoUrl(photo.file)} alt={photo.caption || '照片'} />
-        <div className="lightbox-caption">
-          {photo.caption || '未命名照片'}
-          <span className="lightbox-count">{index + 1} / {photos.length}</span>
-        </div>
+    <div className="lightbox" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+      <button type="button" className="lightbox-close" onClick={onClose} aria-label="关闭">
+        <IconX size={22} />
+      </button>
+      {photos.length > 1 && (
+        <>
+          <button
+            type="button"
+            className="lightbox-nav left"
+            onClick={() => setIndex((i) => (i - 1 + photos.length) % photos.length)}
+            aria-label="上一张"
+          >
+            <IconChevronLeft size={24} />
+          </button>
+          <button
+            type="button"
+            className="lightbox-nav right"
+            onClick={() => setIndex((i) => (i + 1) % photos.length)}
+            aria-label="下一张"
+          >
+            <IconChevronRight size={24} />
+          </button>
+        </>
+      )}
+      <img className="lightbox-image" src={photoUrl(photo.file)} alt={photo.caption || '照片'} />
+      <div className="lightbox-caption">
+        <span>{photo.caption || '未命名照片'}</span>
+        <span className="lightbox-count">{index + 1} / {photos.length}</span>
       </div>
     </div>,
     document.body

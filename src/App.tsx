@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppInfo, Character, Config, FreeChatState, Item, ItemStatus, RitualState, UpdateInfo } from './types';
-import { TitleBar, Dock, type View } from './components/Chrome';
+import { TitleBar, Sidebar, MobileBar, TabBar, NAV_ITEMS, type View } from './components/Chrome';
 import { HomePage } from './pages/HomePage';
 import { CollectionPage } from './pages/CollectionPage';
 import { CalendarPage } from './pages/CalendarPage';
@@ -10,8 +10,8 @@ import { ChatPage } from './pages/ChatPage';
 import { SettingsModal } from './components/SettingsModal';
 import { ItemEditor } from './components/ItemEditor';
 import { ItemDetail } from './components/ItemDetail';
-import { Spinner, Toast } from './components/ui';
-import { cleanError, type ItemChange } from './utils';
+import { ConfirmHost, Spinner, Toast, confirmDialog, useNarrow } from './components/ui';
+import { cleanError, cx, type ItemChange } from './utils';
 import { todayKey } from './constants';
 import { IconBloom } from './icons';
 
@@ -24,6 +24,7 @@ type EditorState = {
 };
 
 export default function App() {
+  const narrow = useNarrow();
   const [booted, setBooted] = useState(false);
   const [view, setView] = useState<View>('home');
   const [config, setConfig] = useState<Config | null>(null);
@@ -48,6 +49,8 @@ export default function App() {
   const [toast, setToast] = useState<ToastState>(null);
   const toastTimer = useRef<number | null>(null);
   const updateNotified = useRef(false);
+
+  const isAndroid = appInfo?.platform === 'android';
 
   const showToast = useCallback((text: string, kind: 'ok' | 'error' | 'info' = 'info') => {
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
@@ -196,7 +199,13 @@ export default function App() {
   };
 
   const deleteItem = async (item: Item) => {
-    if (!window.confirm(`真的要把「${item.name}」从收藏室里删掉吗？照片会一起消失，但已经归档的对话记忆会保留。`)) return;
+    const ok = await confirmDialog({
+      title: `删除「${item.name}」？`,
+      message: '照片会一起消失，但已经归档的对话记忆会保留。',
+      confirmText: '删除',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await window.hf.items.remove(item.id);
       setDetailItemId(null);
@@ -226,15 +235,8 @@ export default function App() {
   const resumeRitual = async () => {
     try {
       const state = await window.hf.ritual.state();
-      if (!state.exists || state.status === 'complete') {
-        if (state.status === 'complete') {
-          setTodayState(state);
-          setRitualEntry(state);
-          setRitualAutoOpen(false);
-          setView('ritual');
-        } else {
-          showToast('今天还没有开始上贡。', 'info');
-        }
+      if (!state.exists) {
+        showToast('今天还没有开始上贡。', 'info');
         return;
       }
       setTodayState(state);
@@ -262,12 +264,33 @@ export default function App() {
     setView('collection');
   };
 
+  const openChat = (threadId?: string | null) => {
+    setRequestedThreadId(threadId || null);
+    setView('chat');
+    void refreshFreeChat();
+  };
+
+  const navigate = (next: View) => {
+    if (next === 'memory') setMemoryItemId(null);
+    if (next === 'chat') { setRequestedThreadId(null); void refreshFreeChat(); }
+    if (next === 'calendar') setCalendarFocusDay(null);
+    setView(next);
+  };
+
   const detailItem = detailItemId ? items.find((item) => item.id === detailItemId) || null : null;
+  const ritualActive = Boolean(todayState?.status === 'in_progress' && todayState.exists);
+  const lastChat = freeChat?.lastMessage || null;
+  let chatUnread = false;
+  try {
+    chatUnread = view !== 'chat' && Boolean(
+      lastChat?.role === 'assistant' && lastChat.ts > Number(localStorage.getItem('hf.freechatReadAt') || 0)
+    );
+  } catch {}
 
   if (!booted) {
     return (
-      <div className="boot-screen">
-        <div className="boot-mark"><IconBloom size={36} /></div>
+      <div className="boot">
+        <div className="boot-mark"><IconBloom size={30} /></div>
         <div className="boot-name">HentaiFigure</div>
         <div className="boot-sub">正在打开收藏室…</div>
         <Spinner size={20} />
@@ -275,100 +298,120 @@ export default function App() {
     );
   }
 
+  const immersive = view === 'ritual' || view === 'chat';
+  const pageTitle = NAV_ITEMS.find((n) => n.view === view)?.label || 'HentaiFigure';
+
   return (
-    <div className="app">
-      <TitleBar
-        onAdd={() => void openAdd()}
-        onSettings={() => openSettings('api')}
-        updateAvailable={Boolean(updateInfo?.available)}
-        onUpdateClick={() => openSettings('update')}
-        maximized={maximized}
-      />
+    <div className={cx('app', narrow ? 'is-narrow' : 'is-wide', isAndroid && 'is-android')}>
+      {!isAndroid && !narrow && (
+        <TitleBar
+          updateAvailable={Boolean(updateInfo?.available)}
+          onUpdateClick={() => openSettings('update')}
+          maximized={maximized}
+        />
+      )}
+      {narrow && !immersive && (
+        <MobileBar
+          title={view === 'home' ? 'HentaiFigure' : pageTitle}
+          onAdd={() => void openAdd()}
+          onSettings={() => openSettings('api')}
+          updateAvailable={Boolean(updateInfo?.available)}
+          onUpdateClick={() => openSettings('update')}
+        />
+      )}
 
-      <main className="app-main">
-        {view === 'home' && (
-          <HomePage
-            items={items}
-            todayState={todayState}
-            config={config}
-            appInfo={appInfo}
-            updateInfo={updateInfo}
-            freeChat={freeChat}
+      <div className="app-body">
+        {!narrow && (
+          <Sidebar
+            view={view}
+            onChange={navigate}
+            ritualActive={ritualActive}
+            chatUnread={chatUnread}
             onAdd={() => void openAdd()}
-            onStart={() => void startRitual()}
-            onResume={() => void resumeRitual()}
-            onViewToday={viewToday}
-            onOpenSettings={() => openSettings('api')}
-            onGoCollection={goCollection}
-            onUpdateClick={() => openSettings('update')}
-            onOpenChat={() => { setRequestedThreadId(null); setView('chat'); void refreshFreeChat(); }}
+            onSettings={() => openSettings('api')}
+            version={appInfo?.version}
           />
         )}
 
-        {view === 'collection' && (
-          <CollectionPage
-            items={items}
-            filter={collectionFilter}
-            onFilterChange={setCollectionFilter}
-            onAdd={() => void openAdd()}
-            onOpen={(item) => setDetailItemId(item.id)}
-            onEdit={openEdit}
-          />
-        )}
+        <main className={cx('app-main', `view-${view}`)}>
+          {view === 'home' && (
+            <HomePage
+              items={items}
+              todayState={todayState}
+              config={config}
+              updateInfo={updateInfo}
+              freeChat={freeChat}
+              chatUnread={chatUnread}
+              onAdd={() => void openAdd()}
+              onStart={() => void startRitual()}
+              onResume={() => void resumeRitual()}
+              onViewToday={viewToday}
+              onOpenSettings={() => openSettings('api')}
+              onGoCollection={goCollection}
+              onOpenItem={(item) => setDetailItemId(item.id)}
+              onUpdateClick={() => openSettings('update')}
+              onOpenChat={() => openChat(null)}
+            />
+          )}
 
-        {view === 'calendar' && (
-          <CalendarPage
-            focusDay={calendarFocusDay}
-            onToast={showToast}
-          />
-        )}
+          {view === 'collection' && (
+            <CollectionPage
+              items={items}
+              characters={characters}
+              filter={collectionFilter}
+              onFilterChange={setCollectionFilter}
+              onAdd={() => void openAdd()}
+              onOpen={(item) => setDetailItemId(item.id)}
+              onEdit={openEdit}
+            />
+          )}
 
-        {view === 'memory' && (
-          <MemoryPage
-            initialItemId={memoryItemId}
-            onToast={showToast}
-          />
-        )}
+          {view === 'calendar' && (
+            <CalendarPage focusDay={calendarFocusDay} onToast={showToast} />
+          )}
 
-        {view === 'chat' && (
-          <ChatPage
-            config={config}
-            items={items}
-            characters={characters}
-            requestedThreadId={requestedThreadId}
-            apiKeySet={Boolean(config?.apiKeySet)}
-            onOpenSettings={() => openSettings('api')}
-            onOpenMemory={() => { setMemoryItemId(null); setView('memory'); }}
-            onStateChanged={refreshFreeChat}
-            onThreadSelected={() => setRequestedThreadId(null)}
-            toast={showToast}
-          />
-        )}
+          {view === 'memory' && (
+            <MemoryPage initialItemId={memoryItemId} onToast={showToast} />
+          )}
 
-        {view === 'ritual' && ritualEntry && (
-          <RitualPage
-            initialState={ritualEntry}
-            autoOpen={ritualAutoOpen}
-            config={config}
-            apiKeySet={Boolean(config?.apiKeySet)}
-            onExit={() => { setView('home'); void refreshData(); }}
-            onRefreshData={refreshData}
-            onOpenSettings={() => openSettings('api')}
-            onViewToday={viewToday}
-            toast={showToast}
-          />
-        )}
-      </main>
+          {view === 'chat' && (
+            <ChatPage
+              config={config}
+              items={items}
+              characters={characters}
+              requestedThreadId={requestedThreadId}
+              apiKeySet={Boolean(config?.apiKeySet)}
+              narrow={narrow}
+              onOpenSettings={() => openSettings('api')}
+              onOpenMemory={() => { setMemoryItemId(null); setView('memory'); }}
+              onOpenItem={(item) => setDetailItemId(item.id)}
+              onBack={() => setView('home')}
+              onStateChanged={refreshFreeChat}
+              onThreadSelected={() => setRequestedThreadId(null)}
+              toast={showToast}
+            />
+          )}
 
-      <Dock
-        view={view}
-        ritualActive={Boolean(todayState?.status === 'in_progress' && todayState.exists)}
-        onChange={(next) => {
-          if (next === 'memory') setMemoryItemId(null);
-          if (next === 'chat') { setRequestedThreadId(null); void refreshFreeChat(); }
-          setView(next);
-        }}
-      />
+          {view === 'ritual' && ritualEntry && (
+            <RitualPage
+              initialState={ritualEntry}
+              autoOpen={ritualAutoOpen}
+              config={config}
+              apiKeySet={Boolean(config?.apiKeySet)}
+              narrow={narrow}
+              onExit={() => { setView('home'); void refreshData(); }}
+              onRefreshData={refreshData}
+              onOpenSettings={() => openSettings('api')}
+              onViewToday={viewToday}
+              toast={showToast}
+            />
+          )}
+        </main>
+      </div>
+
+      {narrow && view !== 'ritual' && (
+        <TabBar view={view} onChange={navigate} ritualActive={ritualActive} chatUnread={chatUnread} />
+      )}
 
       {settingsOpen && config && (
         <SettingsModal
@@ -376,6 +419,7 @@ export default function App() {
           appInfo={appInfo}
           updateInfo={updateInfo}
           initialTab={settingsTab}
+          narrow={narrow}
           onClose={() => setSettingsOpen(false)}
           onSaved={(next) => {
             setConfig(next);
@@ -393,6 +437,7 @@ export default function App() {
           initialStatus={editor.presetStatus}
           characters={characters}
           items={items}
+          isAndroid={isAndroid}
           onCharactersChanged={setCharacters}
           onClose={() => void closeEditor()}
           onSaved={(saved, meta) => void handleSaved(saved, meta)}
@@ -412,11 +457,8 @@ export default function App() {
         />
       )}
 
+      <ConfirmHost />
       {toast && <Toast key={toast.id} text={toast.text} kind={toast.kind} />}
     </div>
   );
 }
-
-
-
-

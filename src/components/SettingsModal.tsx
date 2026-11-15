@@ -1,23 +1,23 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, Config, PromptBundle, UpdateInfo } from '../types';
 import { PROMPT_SCHEMA } from '../prompts';
-import { Modal, ManagerAvatar, Spinner } from './ui';
+import { ManagerAvatar, Modal, Row, SheetHeader, Spinner, Switch, confirmDialog } from './ui';
 import {
-  IconAlert, IconCheck, IconCircleCheck, IconClock, IconDownload, IconFolder, IconInfo, IconChat,
-  IconRefresh, IconSettings, IconSparkles, IconStack, IconUpload, IconWallet, IconX,
+  IconAlert, IconChat, IconCheck, IconCircleCheck, IconClock, IconDownload, IconFolder, IconInfo,
+  IconRefresh, IconSettings, IconSparkles, IconStack, IconUpload, IconWallet,
 } from '../icons';
-import { cleanError } from '../utils';
+import { cleanError, cx } from '../utils';
 import appConfig from '../../app-config.json';
 
 type Tab = 'api' | 'persona' | 'prompts' | 'update' | 'data' | 'about';
 
-const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
-  { id: 'api', label: 'API', icon: <IconSettings size={17} /> },
-  { id: 'persona', label: '管理员', icon: <IconSparkles size={17} /> },
-  { id: 'prompts', label: '进阶', icon: <IconStack size={17} /> },
-  { id: 'update', label: '更新', icon: <IconRefresh size={17} /> },
-  { id: 'data', label: '数据', icon: <IconFolder size={17} /> },
-  { id: 'about', label: '关于', icon: <IconInfo size={17} /> },
+const TABS: { id: Tab; label: string; title: string; icon: ReactNode }[] = [
+  { id: 'api', label: 'API', title: '连接 DeepSeek', icon: <IconSettings size={16} /> },
+  { id: 'persona', label: '管理员', title: '管理员的性格', icon: <IconSparkles size={16} /> },
+  { id: 'prompts', label: '进阶', title: '进阶设置', icon: <IconStack size={16} /> },
+  { id: 'update', label: '更新', title: '检查更新', icon: <IconRefresh size={16} /> },
+  { id: 'data', label: '数据', title: '数据与备份', icon: <IconFolder size={16} /> },
+  { id: 'about', label: '关于', title: '关于 HentaiFigure', icon: <IconInfo size={16} /> },
 ];
 
 export function SettingsModal({
@@ -25,6 +25,7 @@ export function SettingsModal({
   appInfo,
   updateInfo,
   initialTab,
+  narrow,
   onClose,
   onSaved,
   toast,
@@ -33,6 +34,7 @@ export function SettingsModal({
   appInfo: AppInfo | null;
   updateInfo: UpdateInfo | null;
   initialTab?: string;
+  narrow?: boolean;
   onClose: () => void;
   onSaved: (config: Config) => void;
   toast: (text: string, kind?: 'ok' | 'error' | 'info') => void;
@@ -69,6 +71,8 @@ export function SettingsModal({
   const [promptBusy, setPromptBusy] = useState(false);
   const [devBusy, setDevBusy] = useState(false);
 
+  const isAndroid = appInfo?.platform === 'android';
+
   useEffect(() => setInfo(updateInfo), [updateInfo]);
 
   useEffect(() => {
@@ -87,9 +91,7 @@ export function SettingsModal({
     const off = window.hf.onEvent((event) => {
       if (event.type === 'update:info' && event.info) setInfo(event.info as UpdateInfo);
       if (event.type === 'update:available' && event.info) setInfo(event.info as UpdateInfo);
-      if (event.type === 'update:progress') {
-        setUpdateMessage(String(event.message || ''));
-      }
+      if (event.type === 'update:progress') setUpdateMessage(String(event.message || ''));
     });
     return off;
   }, []);
@@ -220,7 +222,13 @@ export function SettingsModal({
   const resetAllPrompts = async () => {
     const keys = Object.keys(promptBundle?.defaults || {});
     if (!keys.length) return;
-    if (!window.confirm('把全部提示词恢复成默认值？你改过的内容会丢失。')) return;
+    const ok = await confirmDialog({
+      title: '恢复全部提示词？',
+      message: '会把全部提示词恢复成默认值，你改过的内容会丢失。',
+      confirmText: '全部恢复',
+      danger: true,
+    });
+    if (!ok) return;
     setPromptBusy(true);
     setErr('');
     try {
@@ -234,14 +242,20 @@ export function SettingsModal({
     }
   };
 
-  const toggleDevPromptMode = async () => {
+  const toggleDevPromptMode = async (next: boolean) => {
     if (!promptBundle) return;
-    const next = !promptBundle.devPromptMode;
     if (next && !promptBundle.defaultsEditable) {
       toast('当前版本不能写入系统默认提示词。请在源码目录里运行开发模式。', 'error');
       return;
     }
-    if (next && !window.confirm('开发人员选项：保存提示词时会直接改写系统默认值，不再写用户层。确定打开吗？')) return;
+    if (next) {
+      const ok = await confirmDialog({
+        title: '打开开发人员选项？',
+        message: '打开后，保存提示词时会直接改写系统默认值文件，不再写用户层。',
+        confirmText: '打开',
+      });
+      if (!ok) return;
+    }
     setDevBusy(true);
     setErr('');
     try {
@@ -287,15 +301,17 @@ export function SettingsModal({
 
   const applyUpdate = async () => {
     if (!info?.available) return;
-    const okay = window.confirm('更新前会自动备份本地收藏和记忆。更新完成后应用会自动重启，确定继续吗？');
-    if (!okay) return;
+    const ok = await confirmDialog({
+      title: '现在更新并重启？',
+      message: '更新前会自动备份本地收藏和记忆。更新完成后应用会自动重启。',
+      confirmText: '更新',
+    });
+    if (!ok) return;
     setApplying(true);
     setUpdateMessage('准备更新…');
     try {
       const result = await window.hf.update.apply();
-      if (result.updated) {
-        setUpdateMessage('更新完成，正在重启…');
-      }
+      if (result.updated) setUpdateMessage('更新完成，正在重启…');
     } catch (e) {
       setApplying(false);
       setUpdateMessage('');
@@ -303,7 +319,27 @@ export function SettingsModal({
     }
   };
 
+  const openRelease = async () => {
+    try {
+      await window.hf.update.openRelease();
+    } catch (e) {
+      toast(cleanError(e), 'error');
+    }
+  };
+
+  const openExternal = async (url: string) => {
+    try {
+      await window.hf.openExternal(url);
+    } catch (e) {
+      toast(cleanError(e), 'error');
+    }
+  };
+
   const openDir = async () => {
+    if (isAndroid) {
+      toast('手机版数据保存在应用本地存储中，请用「导出备份 ZIP」迁移。', 'info');
+      return;
+    }
     await window.hf.data.openDir();
   };
 
@@ -343,49 +379,48 @@ export function SettingsModal({
     }
   };
 
+  const activeTabMeta = TABS.find((t) => t.id === tab) || TABS[0];
+  const showSaveFooter = tab === 'api' || tab === 'persona' || tab === 'update';
+
   return (
-    <Modal className="modal-settings" onClose={onClose}>
-      <div className="settings">
+    <Modal size="lg" onClose={onClose} className="settings-sheet">
+      <div className={cx('settings', narrow && 'is-narrow')}>
         <aside className="settings-nav">
-          <div className="settings-brand">
-            <span className="brand-mark small">HF</span>
-            <div>
-              <strong>设置</strong>
-              <small>收藏室后台</small>
+          {!narrow && (
+            <div className="settings-brand">
+              <span className="brand-mark">HF</span>
+              <div>
+                <strong>设置</strong>
+                <small>收藏室后台</small>
+              </div>
             </div>
+          )}
+          <div className="settings-tabs">
+            {TABS.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={cx('settings-tab', tab === item.id && 'active')}
+                onClick={() => setTab(item.id)}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            ))}
           </div>
-          {TABS.map((item) => (
-            <button
-              key={item.id}
-              className={`settings-tab ${tab === item.id ? 'active' : ''}`}
-              onClick={() => setTab(item.id)}
-            >
-              {item.icon}
-              {item.label}
-            </button>
-          ))}
-          <div className="settings-nav-foot">
-            <span>v{appInfo?.version || '1.2.0'}</span>
-            <span className="settings-nav-dot" />
-            <span>本地运行</span>
-          </div>
+          {!narrow && (
+            <div className="settings-nav-foot">
+              v{appInfo?.version || '1.3.1'} · {isAndroid ? 'Android' : '本地运行'}
+            </div>
+          )}
         </aside>
 
         <div className="settings-main">
-          <header className="settings-head">
-            <div>
-              <div className="eyebrow">{TABS.find((t) => t.id === tab)?.label.toUpperCase()}</div>
-              <h2>
-                {tab === 'api' && '连接 DeepSeek'}
-                {tab === 'persona' && '管理员的性格'}
-                {tab === 'prompts' && '进阶设置'}
-                {tab === 'update' && '检查更新'}
-                {tab === 'data' && '数据与备份'}
-                {tab === 'about' && '关于 HentaiFigure'}
-              </h2>
-            </div>
-            <button className="icon-button" onClick={onClose} aria-label="关闭"><IconX size={20} /></button>
-          </header>
+          <SheetHeader
+            eyebrow={activeTabMeta.label.toUpperCase()}
+            title={activeTabMeta.title}
+            onClose={onClose}
+          />
 
           <div className="settings-body">
             {tab === 'api' && (
@@ -404,7 +439,8 @@ export function SettingsModal({
                       />
                       {config.apiKeySet && (
                         <button
-                          className={`btn btn-small ${clearKey ? 'btn-danger' : 'btn-ghost'}`}
+                          type="button"
+                          className={cx('btn btn-sm', clearKey ? 'btn-danger' : 'btn-ghost')}
                           onClick={() => setClearKey((v) => !v)}
                         >
                           {clearKey ? '确定清除？' : '清除'}
@@ -412,7 +448,7 @@ export function SettingsModal({
                       )}
                     </div>
                     <p className="muted small">
-                      Key 只保存在这台电脑上，并使用系统安全存储加密。它不会随备份导出到聊天内容里。
+                      Key 只保存在当前设备上，不会随备份导出到聊天内容里。
                     </p>
                   </div>
 
@@ -431,12 +467,12 @@ export function SettingsModal({
                   </p>
 
                   <div className="test-row">
-                    <button className="btn btn-soft" onClick={test} disabled={testing}>
+                    <button type="button" className="btn btn-soft" onClick={() => void test()} disabled={testing}>
                       {testing ? <Spinner size={15} /> : <IconSparkles size={15} />}
                       测试连接
                     </button>
                     {testResult && (
-                      <span className={`test-result ${testResult.ok ? 'ok' : 'error'}`}>
+                      <span className={cx('test-result', testResult.ok ? 'ok' : 'error')}>
                         {testResult.ok ? <IconCircleCheck size={15} /> : <IconAlert size={15} />}
                         {testResult.text}
                       </span>
@@ -448,10 +484,11 @@ export function SettingsModal({
                   <div className="block-title">看图与随机性</div>
                   <label className="field">
                     <span className="field-label">
-                      每轮附送照片
+                      <span>每轮附送照片</span>
                       <em>{form.maxPhotosPerRequest} 张</em>
                     </span>
                     <input
+                      className="range"
                       type="range"
                       min={1}
                       max={10}
@@ -463,8 +500,12 @@ export function SettingsModal({
                   </label>
                   <div className="field-row">
                     <label className="field">
-                      <span className="field-label">温度 <em>{form.temperature.toFixed(1)}</em></span>
+                      <span className="field-label">
+                        <span>温度</span>
+                        <em>{form.temperature.toFixed(1)}</em>
+                      </span>
                       <input
+                        className="range"
                         type="range"
                         min={0}
                         max={2}
@@ -474,14 +515,14 @@ export function SettingsModal({
                       />
                       <p className="muted small">越高越放得开。默认 1.3。</p>
                     </label>
-                    <label className="field">
+                    <div className="field">
                       <span className="field-label">图片精度</span>
                       <div className="segmented">
-                        <button className={form.imageDetail === 'high' ? 'active' : ''} onClick={() => set('imageDetail', 'high')}>高清</button>
-                        <button className={form.imageDetail === 'low' ? 'active' : ''} onClick={() => set('imageDetail', 'low')}>省流</button>
+                        <button type="button" className={form.imageDetail === 'high' ? 'active' : ''} onClick={() => set('imageDetail', 'high')}>高清</button>
+                        <button type="button" className={form.imageDetail === 'low' ? 'active' : ''} onClick={() => set('imageDetail', 'low')}>省流</button>
                       </div>
                       <p className="muted small">省流会先缩到 512×512，更便宜更快。</p>
-                    </label>
+                    </div>
                   </div>
                 </div>
               </>
@@ -489,110 +530,101 @@ export function SettingsModal({
 
             {tab === 'persona' && (
               <>
-              <div className="settings-section">
-                <div className="block-title">她怎么称呼你</div>
-                <div className="manager-profile">
-                  <div className="manager-profile-avatar">
-                    <ManagerAvatar src={avatar} className="settings-avatar" />
-                    <div className="manager-profile-avatar-actions">
-                      <button className="btn btn-ghost btn-small" onClick={() => void pickAvatar()} disabled={avatarBusy}>
-                        {avatarBusy ? <Spinner size={13} /> : <IconUpload size={14} />}
-                        {avatar ? '换头像' : '上传头像'}
-                      </button>
-                      {avatar && (
-                        <button className="text-button danger" onClick={() => setAvatar('')}>移除</button>
-                      )}
+                <div className="settings-section">
+                  <div className="block-title">她怎么称呼你</div>
+                  <div className="profile-row">
+                    <div className="profile-avatar">
+                      <ManagerAvatar src={avatar} className="avatar-xl" />
+                      <div className="profile-avatar-actions">
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void pickAvatar()} disabled={avatarBusy}>
+                          {avatarBusy ? <Spinner size={13} /> : <IconUpload size={14} />}
+                          {avatar ? '换头像' : '上传头像'}
+                        </button>
+                        {avatar && (
+                          <button type="button" className="link danger" onClick={() => setAvatar('')}>移除</button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="profile-fields">
+                      <label className="field">
+                        <span className="field-label">
+                          <span>你的昵称</span>
+                          <em>管理员会这样叫你</em>
+                        </span>
+                        <input
+                          className="input"
+                          value={form.userName}
+                          onChange={(e) => set('userName', e.target.value)}
+                          placeholder="杂鱼"
+                          maxLength={24}
+                        />
+                        <p className="muted small">问候语、聊天里的称呼、记忆摘要都会用这个名字。</p>
+                      </label>
+                      <p className="muted small">
+                        头像只保存在本地，会出现在首页、对话页和她说话的每一处。不传的话就是「管」字。
+                      </p>
                     </div>
                   </div>
-                  <div className="manager-profile-fields">
-                    <label className="field">
-                      <span className="field-label">
-                        你的昵称
-                        <em>管理员会这样叫你</em>
-                      </span>
-                      <input
-                        className="input"
-                        value={form.userName}
-                        onChange={(e) => set('userName', e.target.value)}
-                        placeholder="杂鱼"
-                        maxLength={24}
-                      />
-                      <p className="muted small">问候语、聊天里的称呼、记忆摘要都会用这个名字。</p>
-                    </label>
-                    <p className="muted small">
-                      头像只保存在本地，会出现在首页、对话页和她说话的每一处。不传的话就是那个「管」字。
-                    </p>
-                  </div>
                 </div>
-              </div>
 
-              <div className="settings-section">
-                <div className="block-title">系统提示词</div>
-                <p className="muted small">
-                  这是管理员每一次开口前的底色。阶段规则、周边资料和旧记忆会由应用自动接在后面，不需要写在这里。
-                  想改上贡流程、日常开场、记忆整理这些部分，进「进阶设置」。
-                </p>
-                <textarea
-                  className="input textarea prompt-textarea"
-                  value={form.systemPrompt}
-                  onChange={(e) => set('systemPrompt', e.target.value)}
-                  spellCheck={false}
-                />
-                <div className="prompt-actions">
-                  <button className="btn btn-ghost" onClick={resetPrompt}>恢复默认人格</button>
-                  <div className="prompt-actions-right">
-                    <span className="muted small">越具体，她越像你的管理员。</span>
-                    <button className="btn btn-soft" onClick={() => setTab('prompts')}>
+                <div className="settings-section">
+                  <div className="block-title">系统提示词</div>
+                  <p className="muted small">
+                    这是管理员每一次开口前的底色。阶段规则、周边资料和旧记忆会由应用自动接在后面。想改上贡流程、日常开场、记忆整理这些部分，进「进阶设置」。
+                  </p>
+                  <textarea
+                    className="input textarea prompt-textarea"
+                    value={form.systemPrompt}
+                    onChange={(e) => set('systemPrompt', e.target.value)}
+                    spellCheck={false}
+                  />
+                  <div className="prompt-actions">
+                    <button type="button" className="btn btn-ghost" onClick={() => void resetPrompt()}>恢复默认人格</button>
+                    <button type="button" className="btn btn-soft" onClick={() => setTab('prompts')}>
                       <IconStack size={15} /> 进阶设置
                     </button>
                   </div>
                 </div>
-              </div>
 
-              <div className="settings-section">
-                <div className="block-title">每日主动话题</div>
-                <label className="switch-row">
-                  <span>
-                    <strong>到点让管理员主动来找你</strong>
-                    <small>管理员会读取收藏室和全部记忆，自己挑一个话题开头。应用没开的话，下次启动会补上。</small>
-                  </span>
-                  <button
-                    type="button"
-                    className={`switch ${form.dailyChatEnabled ? 'on' : ''}`}
-                    onClick={() => set('dailyChatEnabled', !form.dailyChatEnabled)}
-                    aria-label="切换每日主动话题"
+                <div className="settings-section">
+                  <div className="block-title">每日主动话题</div>
+                  <Row
+                    title="到点让管理员主动来找你"
+                    desc="管理员会读取收藏室和全部记忆，自己挑一个话题开头。应用没开的话，下次启动会补上。"
                   >
-                    <span />
-                  </button>
-                </label>
-                <div className="field-row">
-                  <label className="field">
-                    <span className="field-label">每天的时间</span>
-                    <input
-                      className="input input-date"
-                      type="time"
-                      value={form.dailyChatTime}
-                      onChange={(e) => set('dailyChatTime', e.target.value)}
-                      disabled={!form.dailyChatEnabled}
+                    <Switch
+                      on={form.dailyChatEnabled}
+                      onChange={(next) => set('dailyChatEnabled', next)}
+                      label="切换每日主动话题"
                     />
-                  </label>
-                  <div className="field">
-                    <span className="field-label">现在试一下</span>
-                    <button
-                      className="btn btn-soft"
-                      onClick={() => void proactiveNow()}
-                      disabled={proactiveBusy || !config.apiKeySet}
-                    >
-                      {proactiveBusy ? <Spinner size={15} /> : <IconChat size={15} />}
-                      让她来一条
-                    </button>
-                    <p className="muted small">会立刻在后台生成一条消息，保存在「对话」里。</p>
+                  </Row>
+                  <div className="field-row">
+                    <label className="field">
+                      <span className="field-label">每天的时间</span>
+                      <input
+                        className="input"
+                        type="time"
+                        value={form.dailyChatTime}
+                        onChange={(e) => set('dailyChatTime', e.target.value)}
+                        disabled={!form.dailyChatEnabled}
+                      />
+                    </label>
+                    <div className="field">
+                      <span className="field-label">现在试一下</span>
+                      <button
+                        type="button"
+                        className="btn btn-soft"
+                        onClick={() => void proactiveNow()}
+                        disabled={proactiveBusy || !config.apiKeySet}
+                      >
+                        {proactiveBusy ? <Spinner size={15} /> : <IconChat size={15} />}
+                        让她来一条
+                      </button>
+                      <p className="muted small">会立刻在后台生成一条消息，保存在「对话」里。</p>
+                    </div>
                   </div>
+                  <p className="muted small"><IconClock size={12} /> 主动话题也会显示系统通知。点通知会直接打开对话。</p>
                 </div>
-                <p className="muted small">
-                  <IconClock size={13} /> 主动话题也会显示系统通知。点通知会直接打开对话。
-                </p>
-              </div>
               </>
             )}
 
@@ -601,39 +633,33 @@ export function SettingsModal({
                 <div className="settings-section">
                   <div className="block-title">提示词总览</div>
                   <p className="muted small">
-                    这里包括管理员每一次请求真正发出去的每一条指令，除了 API 连接测试以外都可以改。
-                    改完点最下面的「保存提示词」，只影响这台设备。
+                    这里包括管理员每一次请求真正发出去的每一条指令，除了 API 连接测试以外都可以改。改完点最下面的「保存提示词」，只影响当前设备。
                   </p>
                   <div className="prompt-meta">
                     <span>{Object.keys(promptBundle?.defaults || {}).length} 条指令</span>
-                    <span className="home-foot-dot" />
+                    <span>·</span>
                     <span>{Object.keys(promptBundle?.overrides || {}).length} 条被你改过</span>
                     {promptBundle?.devPromptMode && (
-                      <>
-                        <span className="home-foot-dot" />
-                        <span className="prompt-dev-badge">开发人员模式</span>
-                      </>
+                      <span className="pill pill-warn">开发人员模式</span>
                     )}
                   </div>
-                  <label className="switch-row">
-                    <span>
-                      <strong>开发人员选项</strong>
-                      <small>
-                        {promptBundle?.devPromptMode
-                          ? '保存时直接改写系统默认提示词，不写用户层。'
-                          : '保存到用户层，只影响这台设备。'}
-                      </small>
-                    </span>
-                    <button
-                      type="button"
-                      className={`switch ${promptBundle?.devPromptMode ? 'on' : ''}`}
-                      onClick={() => void toggleDevPromptMode()}
+
+                  <Row
+                    title="开发人员选项"
+                    desc={
+                      promptBundle?.devPromptMode
+                        ? '保存时直接改写系统默认提示词，不写用户层。'
+                        : '保存到用户层，只影响当前设备。'
+                    }
+                  >
+                    <Switch
+                      on={Boolean(promptBundle?.devPromptMode)}
+                      onChange={(next) => void toggleDevPromptMode(next)}
                       disabled={devBusy || !promptBundle || (!promptBundle.devPromptMode && !promptBundle.defaultsEditable)}
-                      aria-label="切换开发人员选项"
-                    >
-                      <span />
-                    </button>
-                  </label>
+                      label="切换开发人员选项"
+                    />
+                  </Row>
+
                   {promptBundle && (
                     <p className="muted small">
                       {promptBundle.devPromptMode
@@ -655,18 +681,19 @@ export function SettingsModal({
                         <div className="prompt-field" key={field.key}>
                           <div className="prompt-field-head">
                             <span className="field-label">
-                              {field.label}
+                              <span>{field.label}</span>
                               {overridden && <em>已修改</em>}
                             </span>
                             <button
-                              className="text-button subtle"
+                              type="button"
+                              className="link muted"
                               onClick={() => void resetPromptKey(field.key)}
                               disabled={promptBusy}
                             >
                               恢复默认
                             </button>
                           </div>
-                          {field.hint && <p className="muted small prompt-field-hint">{field.hint}</p>}
+                          {field.hint && <p className="muted small">{field.hint}</p>}
                           <textarea
                             className="input textarea prompt-textarea sm"
                             value={value}
@@ -686,11 +713,11 @@ export function SettingsModal({
                 ))}
 
                 <div className="settings-section prompt-actions-bar">
-                  <button className="btn btn-primary" onClick={() => void savePrompts()} disabled={promptBusy || !dirtyPromptKeys.length}>
+                  <button type="button" className="btn btn-primary" onClick={() => void savePrompts()} disabled={promptBusy || !dirtyPromptKeys.length}>
                     {promptBusy ? <Spinner size={15} /> : <IconCheck size={16} />}
                     保存提示词{dirtyPromptKeys.length ? `（${dirtyPromptKeys.length}）` : ''}
                   </button>
-                  <button className="btn btn-ghost" onClick={() => void resetAllPrompts()} disabled={promptBusy}>
+                  <button type="button" className="btn btn-ghost" onClick={() => void resetAllPrompts()} disabled={promptBusy}>
                     全部恢复默认
                   </button>
                   {dirtyPromptKeys.length > 0 && <span className="muted small">有未保存的改动</span>}
@@ -705,81 +732,80 @@ export function SettingsModal({
                     <div className="update-version">
                       <div>
                         <span className="muted small">当前版本</span>
-                        <strong>v{info?.currentVersion || appInfo?.version || '1.2.0'}</strong>
+                        <strong>v{info?.currentVersion || appInfo?.version || '1.3.1'}</strong>
                       </div>
-                      <span className={`update-arrow ${info?.available ? 'has' : ''}`}>→</span>
+                      <span className={cx('update-arrow', info?.available && 'has')}>→</span>
                       <div>
                         <span className="muted small">最新版本</span>
-                        <strong>v{info?.latestVersion || info?.currentVersion || appInfo?.version || '1.2.0'}</strong>
+                        <strong>v{info?.latestVersion || info?.currentVersion || appInfo?.version || '1.3.1'}</strong>
                       </div>
-                      <span className={`update-badge ${info?.available ? 'available' : info?.error ? 'error' : info?.configured ? 'ok' : ''}`}>
+                      <span className={cx('pill', info?.available ? 'pill-gold' : info?.error ? 'pill-danger' : info?.configured ? 'pill-ok' : '')}>
                         {info?.available ? '有新版本' : info?.error ? '检查失败' : info?.configured ? '已是最新' : '点击检查'}
                       </span>
                     </div>
+
                     {info?.notes && <p className="update-notes">{info.notes}</p>}
                     {info?.error && <p className="update-error"><IconAlert size={14} /> {info.error}</p>}
                     {!info?.configured && !info?.error && (
                       <p className="muted small">更新源已固定，点「检查更新」会读取 GitHub 上的最新发布。</p>
                     )}
+
                     {applying && (
                       <div className="update-progress">
                         <Spinner size={16} />
                         <span>{updateMessage || '正在更新…'}</span>
                       </div>
                     )}
-                    {appInfo?.platform === 'android' ? (
-                      <p className="muted small"><IconAlert size={13} /> 手机版不支持应用内更新。请到发布页下载新的 APK 覆盖安装；本地收藏和记忆会保留。</p>
+
+                    {isAndroid ? (
+                      <p className="muted small">
+                        <IconAlert size={13} /> 手机版不支持应用内更新。请到发布页下载新的 APK 覆盖安装；本地收藏和记忆会保留。
+                      </p>
                     ) : appInfo?.isPackaged ? (
-                      <p className="muted small"><IconAlert size={13} /> 便携版不支持应用内自动更新。请到发布页下载新版本，直接替换 exe；本地数据不受影响。</p>
+                      <p className="muted small">
+                        <IconAlert size={13} /> 便携版不支持应用内自动更新。请到发布页下载新版本，直接替换 exe；本地数据不受影响。
+                      </p>
                     ) : null}
+
                     <div className="update-actions">
-                      <button className="btn btn-soft" onClick={checkUpdate} disabled={checking || applying}>
+                      <button type="button" className="btn btn-soft" onClick={() => void checkUpdate()} disabled={checking || applying}>
                         {checking ? <Spinner size={15} /> : <IconRefresh size={15} />}
                         检查更新
                       </button>
-                      {info?.available && (
-                        <button className="btn btn-primary" onClick={applyUpdate} disabled={applying || Boolean(appInfo?.isPackaged) || appInfo?.platform === 'android'}>
+                      {info?.available && !isAndroid && !appInfo?.isPackaged && (
+                        <button type="button" className="btn btn-primary" onClick={() => void applyUpdate()} disabled={applying}>
                           <IconDownload size={15} /> 更新并重启
                         </button>
                       )}
-                      {info?.htmlUrl && (
-                        <button className="btn btn-ghost" onClick={() => window.hf.update.openRelease()}>打开发布页</button>
-                      )}
+                      <button type="button" className="btn btn-ghost" onClick={() => void openRelease()}>
+                        打开发布页
+                      </button>
                     </div>
+
                     <p className="muted small update-safety">
-                      <IconCheck size={13} /> 更新只替换程序文件。收藏、照片和记忆在 <code>{appInfo?.dataDir || '…'}</code>，并且更新前会自动备份。
+                      <IconCheck size={13} />
+                      <span>更新只替换程序文件。收藏、照片和记忆在 <code>{appInfo?.dataDir || '…'}</code>，并且更新前会自动备份。</span>
                     </p>
                   </div>
                 </div>
 
                 <div className="settings-section">
                   <div className="block-title">更新源</div>
-                  <div className="data-path-box">
-                    <IconDownload size={18} />
+                  <div className="data-path">
+                    <IconDownload size={16} />
                     <code>{appConfig.repoUrl.replace(/^https?:\/\//, '')}</code>
+                    <button type="button" className="link" onClick={() => void openExternal(appConfig.repoUrl)}>打开</button>
                   </div>
-                  <p className="muted small">
-                    更新源已固定在官方仓库。发现新版本时，这里会显示版本差异和发布说明。
-                  </p>
-                  <div className="update-source-actions">
-                    <button className="text-button" onClick={() => window.hf.openExternal(appConfig.repoUrl)}>
-                      打开 GitHub 仓库
-                    </button>
-                  </div>
-                  <label className="switch-row">
-                    <span>
-                      <strong>启动时自动检查更新</strong>
-                      <small>发现新版本时在首页提示，不会自动安装。</small>
-                    </span>
-                    <button
-                      type="button"
-                      className={`switch ${form.autoUpdate ? 'on' : ''}`}
-                      onClick={() => set('autoUpdate', !form.autoUpdate)}
-                      aria-label="切换自动更新"
-                    >
-                      <span />
-                    </button>
-                  </label>
+                  <Row
+                    title="启动时自动检查更新"
+                    desc="发现新版本时在首页提示，不会自动安装。"
+                  >
+                    <Switch
+                      on={form.autoUpdate}
+                      onChange={(next) => set('autoUpdate', next)}
+                      label="切换自动更新"
+                    />
+                  </Row>
                 </div>
               </>
             )}
@@ -788,33 +814,38 @@ export function SettingsModal({
               <>
                 <div className="settings-section">
                   <div className="block-title">本地数据</div>
-                  <div className="data-path-box">
-                    <IconFolder size={18} />
+                  <div className="data-path">
+                    <IconFolder size={16} />
                     <code>{appInfo?.dataDir || '加载中…'}</code>
                   </div>
                   <p className="muted small">
-                    所有收藏、照片和记忆都在这个文件夹里。更新程序不会碰它。删掉这个文件夹等于清空整个收藏室。
+                    所有收藏、照片和记忆都保存在本地。更新程序不会碰它。
                   </p>
                   <div className="data-grid">
-                    <button className="data-action" onClick={openDir}>
-                      <IconFolder size={20} />
-                      <span><strong>打开数据目录</strong><small>看看文件和照片</small></span>
+                    {!isAndroid && (
+                      <button type="button" className="data-action" onClick={() => void openDir()}>
+                        <IconFolder size={19} />
+                        <span><strong>打开数据目录</strong><small>看看文件和照片</small></span>
+                      </button>
+                    )}
+                    <button type="button" className="data-action" onClick={() => void backup()} disabled={Boolean(dataBusy)}>
+                      <IconRefresh size={19} />
+                      <span><strong>立即备份</strong><small>{isAndroid ? '生成并分享备份包' : '存一份到 backups/'}</small></span>
                     </button>
-                    <button className="data-action" onClick={backup} disabled={Boolean(dataBusy)}>
-                      <IconRefresh size={20} />
-                      <span><strong>立即备份</strong><small>存一份到 backups/</small></span>
-                    </button>
-                    <button className="data-action" onClick={exportZip} disabled={Boolean(dataBusy)}>
-                      <IconDownload size={20} />
+                    <button type="button" className="data-action" onClick={() => void exportZip()} disabled={Boolean(dataBusy)}>
+                      <IconDownload size={19} />
                       <span><strong>导出备份 ZIP</strong><small>收藏 + 照片 + 记忆</small></span>
                     </button>
-                    <button className="data-action" onClick={importZip} disabled={Boolean(dataBusy)}>
-                      <IconWallet size={20} />
+                    <button type="button" className="data-action" onClick={() => void importZip()} disabled={Boolean(dataBusy)}>
+                      <IconWallet size={19} />
                       <span><strong>导入备份</strong><small>覆盖当前数据并重启</small></span>
                     </button>
                   </div>
                   {dataBusy && (
-                    <div className="update-progress"><Spinner size={16} /><span>{dataBusy === 'backup' ? '正在备份…' : dataBusy === 'export' ? '正在打包…' : '正在导入…'}</span></div>
+                    <div className="update-progress">
+                      <Spinner size={16} />
+                      <span>{dataBusy === 'backup' ? '正在备份…' : dataBusy === 'export' ? '正在打包…' : '正在导入…'}</span>
+                    </div>
                   )}
                 </div>
 
@@ -830,58 +861,51 @@ export function SettingsModal({
             {tab === 'about' && (
               <>
                 <div className="settings-section about-hero">
-                  <span className="brand-mark">HF</span>
+                  <span className="brand-mark lg">HF</span>
                   <div>
                     <h3>HentaiFigure</h3>
-                    <p>一个只属于你的手办收藏室。<br />每天一次上贡，擦拭、意淫、教唆。</p>
+                    <p className="muted">一个只属于你的手办收藏室。<br />每天一次上贡，擦拭、意淫、教唆。</p>
                   </div>
                 </div>
                 <div className="settings-section">
                   <div className="about-rows">
-                    <div><span>版本</span><b>v{appInfo?.version || '1.2.0'}</b></div>
-                    <div><span>Electron</span><b>{appInfo?.versions.electron || '—'}</b></div>
-                    <div><span>Chrome</span><b>{appInfo?.versions.chrome || '—'}</b></div>
-                    <div><span>Node</span><b>{appInfo?.versions.node || '—'}</b></div>
-                    <div><span>数据目录</span><b className="mono">{appInfo?.dataDir || '—'}</b></div>
+                    <div><span>版本</span><b>v{appInfo?.version || '1.3.1'}</b></div>
+                    <div><span>运行环境</span><b>{isAndroid ? 'Android · Capacitor' : `Electron ${appInfo?.versions.electron || ''}`}</b></div>
+                    {!isAndroid && <div><span>Chrome</span><b>{appInfo?.versions.chrome || '—'}</b></div>}
+                    {!isAndroid && <div><span>Node</span><b>{appInfo?.versions.node || '—'}</b></div>}
+                    <div><span>数据存储</span><b className="mono">{appInfo?.dataDir || '—'}</b></div>
                   </div>
-                  <p className="muted small">
-                    快捷键：<code>F11</code> 全屏 · <code>F12</code> 开发者工具。所有对话内容由你配置的 DeepSeek API 生成，只保存在本地。
-                  </p>
+                  {!isAndroid && (
+                    <p className="muted small">
+                      快捷键：<code>F11</code> 全屏 · <code>F12</code> 开发者工具。所有对话内容由你配置的 DeepSeek API 生成，只保存在本地。
+                    </p>
+                  )}
                   <div className="about-links">
-                    <button className="text-button" onClick={() => window.hf.openExternal('https://api-docs.deepseek.com/')}>DeepSeek API 文档</button>
-                    <button className="text-button" onClick={() => window.hf.openExternal('https://github.com/deepseek-ai/chat-demo')}>参考的 chat-demo 项目</button>
+                    <button type="button" className="link" onClick={() => void openExternal('https://api-docs.deepseek.com/')}>DeepSeek API 文档</button>
+                    <button type="button" className="link" onClick={() => void openExternal('https://github.com/deepseek-ai/chat-demo')}>参考的 chat-demo 项目</button>
                   </div>
                 </div>
-                <div className="settings-section about-foot">
-                  <div className="about-foot-line">
-                    <span>{appInfo?.name || 'HentaiFigure'} · 私人的收藏室</span>
-                    <span className="home-foot-dot" />
-                    <span>
-                      {appInfo?.platform === 'android'
-                        ? '照片、记忆与 API Key 都只留在这台手机上'
-                        : '照片、记忆与 API Key 都只留在这台电脑上'}
-                    </span>
-                  </div>
+                <div className="settings-section">
                   <p className="muted small">
-                    {appInfo?.platform === 'android'
-                      ? '数据保存在应用自己的本地存储里，不会上传到除你配置的 API 之外的任何地方。'
-                      : '数据保存在上面的数据目录里，不会上传到除你配置的 API 之外的任何地方。'}
+                    {isAndroid
+                      ? '照片、记忆与 API Key 都只留在这台手机上，不会上传到除你配置的 API 之外的任何地方。'
+                      : '照片、记忆与 API Key 都只留在这台电脑的数据目录里，不会上传到除你配置的 API 之外的任何地方。'}
                   </p>
                 </div>
               </>
             )}
           </div>
 
-          <footer className="settings-foot">
-            <div className="settings-error">{err}</div>
-            <div className="settings-actions">
-              {tab !== 'data' && tab !== 'about' && tab !== 'prompts' && (
-                <button className="btn btn-primary" onClick={save} disabled={saving}>
+          <footer className="sheet-foot">
+            <div className="sheet-error">{err}</div>
+            <div className="sheet-actions">
+              {showSaveFooter && (
+                <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={saving}>
                   {saving ? <Spinner size={15} /> : <IconCheck size={16} />}
                   保存设置
                 </button>
               )}
-              <button className="btn btn-ghost" onClick={onClose}>关闭</button>
+              <button type="button" className="btn btn-ghost" onClick={onClose}>关闭</button>
             </div>
           </footer>
         </div>
@@ -889,11 +913,3 @@ export function SettingsModal({
     </Modal>
   );
 }
-
-
-
-
-
-
-
-

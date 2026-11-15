@@ -1,43 +1,46 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { AppInfo, Config, FreeChatState, Item, ItemStatus, RitualState, UpdateInfo } from '../types';
+import type { Config, FreeChatState, Item, ItemStatus, RitualState, UpdateInfo } from '../types';
 import {
   PHASES, PHASE_META, STATUS_META, formatMoney, itemCover, pendingTail, photoUrl,
   pickGreeting, totalSpent,
 } from '../constants';
 import {
-  IconAlert, IconCamera, IconCheck, IconChevronRight, IconCircleCheck, IconChat, IconClock, IconPlus,
-  IconSparkles,
+  IconAlert, IconCheck, IconChevronRight, IconCircleCheck, IconClock, IconGallery, IconPlus,
+  IconRefresh, IconSparkles, IconWallet,
 } from '../icons';
 import { ManagerAvatar } from '../components/ui';
+import { cx } from '../utils';
 
 export function HomePage({
   items,
   todayState,
   config,
-  appInfo,
   updateInfo,
   freeChat,
+  chatUnread,
   onAdd,
   onStart,
   onResume,
   onViewToday,
   onOpenSettings,
   onGoCollection,
+  onOpenItem,
   onUpdateClick,
   onOpenChat,
 }: {
   items: Item[];
   todayState: RitualState | null;
   config: Config | null;
-  appInfo: AppInfo | null;
   updateInfo: UpdateInfo | null;
   freeChat: FreeChatState | null;
+  chatUnread: boolean;
   onAdd: () => void;
   onStart: () => void;
   onResume: () => void;
   onViewToday: () => void;
   onOpenSettings: () => void;
   onGoCollection: (status?: ItemStatus) => void;
+  onOpenItem: (item: Item) => void;
   onUpdateClick: () => void;
   onOpenChat: () => void;
 }) {
@@ -57,167 +60,168 @@ export function HomePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length, complete, userName]);
 
-  const collage = useMemo(() => {
-    return items
-      .filter((item) => item.photos?.length)
-      .slice(0, 7)
-      .map((item) => ({ id: item.id, src: photoUrl(itemCover(item), true), name: item.name }));
+  const recent = useMemo(() => {
+    return [...items]
+      .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))
+      .slice(0, 12);
   }, [items]);
+  const fan = recent.filter((item) => item.photos?.length).slice(0, 3);
 
   const today = new Date();
   const dateText = `${today.getMonth() + 1}月${today.getDate()}日 · 周${['日', '一', '二', '三', '四', '五', '六'][today.getDay()]}`;
   const spent = totalSpent(items);
   const tail = pendingTail(items);
   const lastChat = freeChat?.lastMessage || null;
-  let unread = false;
-  try {
-    unread = Boolean(lastChat?.role === 'assistant' && lastChat.ts > Number(localStorage.getItem('hf.freechatReadAt') || 0));
-  } catch {}
   const chatSchedule = config?.dailyChatEnabled !== false
     ? `每天 ${config?.dailyChatTime || '22:00'} 主动来找你`
     : '主动话题已关闭';
 
   const reroll = () => setGreeting(pickGreeting(items, complete, counts, userName));
+  const showProgress = Boolean(todayState?.progress?.length) && (inProgress || complete);
 
   return (
-    <div className="page home-page">
+    <div className="page home">
       {updateInfo?.available && (
-        <button className="update-banner" onClick={onUpdateClick}>
-          <span className="update-banner-dot" />
-          发现新版本 v{updateInfo.latestVersion}，去更新
-          <IconChevronRight size={15} />
+        <button type="button" className="banner banner-gold" onClick={onUpdateClick}>
+          <span className="pulse-dot" />
+          <span>发现新版本 v{updateInfo.latestVersion}</span>
+          <span className="banner-cta">去看看 <IconChevronRight size={14} /></span>
         </button>
       )}
 
-      <div className="home-collage" aria-hidden="true">
-        {collage.slice(0, 4).map((item, index) => (
-          <div className={`collage-card c${index}`} key={item.id}>
-            <img src={item.src} alt="" loading="lazy" />
-          </div>
-        ))}
-      </div>
-      <div className="home-collage right" aria-hidden="true">
-        {collage.slice(4, 7).map((item, index) => (
-          <div className={`collage-card c${index}`} key={item.id}>
-            <img src={item.src} alt="" loading="lazy" />
-          </div>
-        ))}
-      </div>
+      {config && !config.apiKeySet && (
+        <button type="button" className="banner banner-rose" onClick={onOpenSettings}>
+          <IconAlert size={16} />
+          <span>还没填 DeepSeek API Key，管理员暂时开不了口。</span>
+          <span className="banner-cta">去设置 <IconChevronRight size={14} /></span>
+        </button>
+      )}
 
-      <div className="hero">
-        <div className="hero-kicker">
-          <span className="hero-date">{dateText}</span>
-        </div>
-
-        <div className="hero-greeting-wrap">
+      <section className={cx('hero', complete && 'is-complete')}>
+        <div className="hero-main">
+          <div className="hero-date">{dateText}</div>
           <button type="button" className="hero-greeting" onClick={reroll} title="换一句">
             {greeting}
+            <IconRefresh size={14} className="hero-reroll" />
           </button>
+          <p className="hero-sub">
+            {complete
+              ? '今天的份已经交上去了。余韵、灰尘和钱包，都明天再说。'
+              : inProgress
+                ? '上一轮还没结束，管理员在等你把话说完。'
+                : '擦拭 · 意淫 · 教唆。一次做完，今天才算数。'}
+          </p>
+
+          <div className="hero-actions">
+            <button
+              type="button"
+              className={cx('cta', complete && 'is-done')}
+              onClick={complete ? onViewToday : inProgress ? onResume : onStart}
+              disabled={!items.length && !complete}
+            >
+              {complete ? <IconCircleCheck size={20} /> : <IconSparkles size={20} />}
+              <span>{complete ? '今日已上贡 · 回看' : inProgress ? '继续上贡' : '开始今日份上贡'}</span>
+              <IconChevronRight size={18} className="cta-arrow" />
+            </button>
+            {!items.length && (
+              <button type="button" className="btn btn-ghost" onClick={onAdd}>
+                <IconPlus size={16} /> 先添加第一件周边
+              </button>
+            )}
+          </div>
+
+          {showProgress && (
+            <ol className="hero-steps">
+              {PHASES.map((phase, index) => {
+                const p = todayState?.progress.find((x) => x.phase === phase);
+                const state = p?.status || 'pending';
+                return (
+                  <li key={phase} className={cx('hero-step', `phase-${phase}`, state)}>
+                    <span className="hero-step-dot">{state === 'done' ? <IconCheck size={11} /> : index + 1}</span>
+                    <span className="hero-step-text">
+                      <strong>{PHASE_META[phase].label}</strong>
+                      <small>{state === 'skipped' ? '已跳过' : p?.itemName || (state === 'active' ? '进行中' : '待开始')}</small>
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
         </div>
 
-        <p className="hero-sub">
-          {complete
-            ? '今天的份已经交上去了。余韵、灰尘和钱包，都明天再说。'
-            : inProgress
-              ? '上一轮还没结束。管理员在等你把话说完。'
-              : '擦拭 · 意淫 · 教唆。一次做完，今天才算数。'}
-        </p>
-
-        <div className="hero-actions">
-          <button
-            className={`offering-button ${complete ? 'is-complete' : ''}`}
-            onClick={complete ? onViewToday : inProgress ? onResume : onStart}
-            disabled={!items.length && !complete}
-          >
-            <span className="offering-glow" />
-            {complete ? <IconCircleCheck size={22} /> : <IconSparkles size={22} />}
-            <span>{complete ? '今日已上贡' : inProgress ? '继续上贡' : '今日份上贡'}</span>
-            {!complete && <span className="offering-arrow"><IconChevronRight size={18} /></span>}
-          </button>
+        <div className="hero-art" aria-hidden="true">
+          {fan.length ? (
+            fan.map((item, index) => (
+              <div className={`hero-card c${index}`} key={item.id}>
+                <img src={photoUrl(itemCover(item), true)} alt="" loading="lazy" />
+              </div>
+            ))
+          ) : (
+            <div className="hero-card placeholder"><IconGallery size={34} /></div>
+          )}
         </div>
+      </section>
 
-        {complete && (
-          <button className="today-link" onClick={onViewToday}>
-            回看今天发生了什么 <IconChevronRight size={14} />
-          </button>
-        )}
-
-        {!items.length && (
-          <div className="hero-empty">
-            <span>柜子还空着。</span>
-            <button className="text-button" onClick={onAdd}><IconPlus size={14} /> 添加第一件周边</button>
-          </div>
-        )}
-
-        {config && !config.apiKeySet && (
-          <button className="setup-hint" onClick={onOpenSettings}>
-            <IconAlert size={15} />
-            还没填 DeepSeek API Key，管理员暂时开不了口。
-            <span>去设置 <IconChevronRight size={13} /></span>
-          </button>
-        )}
-
-        {!complete && todayState?.progress?.some((p) => p.status !== 'pending') && (
-          <div className="hero-progress">
-            {PHASES.map((phase) => {
-              const p = todayState?.progress.find((x) => x.phase === phase);
-              const state = p?.status || 'pending';
-              return (
-                <div key={phase} className={`mini-phase ${state}`}>
-                  <span className="mini-phase-dot">
-                    {state === 'done' ? <IconCheck size={10} /> : null}
-                  </span>
-                  {PHASE_META[phase].label}
-                  {p?.itemName ? <em>{p.itemName}</em> : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="home-stats">
-        {(['owned', 'pending', 'watching'] as ItemStatus[]).map((status) => (
-          <button className={`stat-card stat-${status}`} key={status} onClick={() => onGoCollection(status)}>
-            <span className="stat-glyph">{STATUS_META[status].glyph}</span>
-            <span className="stat-body">
-              <span className="stat-number">{counts[status]}</span>
+      <section className="home-grid">
+        <div className="stat-grid">
+          {(['owned', 'pending', 'watching'] as ItemStatus[]).map((status) => (
+            <button type="button" className={cx('stat', `tone-${status}`)} key={status} onClick={() => onGoCollection(status)}>
+              <span className="stat-glyph">{STATUS_META[status].glyph}</span>
+              <span className="stat-num">{counts[status]}</span>
               <span className="stat-label">{STATUS_META[status].label}</span>
-            </span>
-            <IconChevronRight size={15} className="stat-arrow" />
-          </button>
-        ))}
-        <div className="stat-card stat-money">
-          <span className="stat-glyph"><IconCamera size={18} /></span>
-          <span className="stat-body">
-            <span className="stat-number">{formatMoney(spent)}</span>
+            </button>
+          ))}
+          <div className="stat tone-money">
+            <span className="stat-glyph"><IconWallet size={16} /></span>
+            <span className="stat-num">{formatMoney(spent)}</span>
             <span className="stat-label">累计投入{tail > 0 ? ` · 待补 ${formatMoney(tail)}` : ''}</span>
-          </span>
+          </div>
         </div>
-      </div>
 
-      <button className={`home-chat-entry ${unread ? 'has-unread' : ''}`} onClick={onOpenChat}>
-        <ManagerAvatar src={config?.managerAvatar} className="home-chat-avatar" />
-        <span className="home-chat-body">
-          <span className="home-chat-title">
-            收藏室管理员
-            <em>{freeChat?.busy ? '正在输入…' : '在线'}</em>
-          </span>
-          <span className="home-chat-preview">
+        <button type="button" className={cx('manager-card', chatUnread && 'has-unread')} onClick={onOpenChat}>
+          <div className="manager-card-top">
+            <ManagerAvatar src={config?.managerAvatar} className="avatar-lg" />
+            <div className="manager-card-id">
+              <strong>收藏室管理员</strong>
+              <small><span className="online-dot" /> {freeChat?.busy ? '正在输入…' : '在线'}</small>
+            </div>
+            {chatUnread && <span className="badge">新消息</span>}
+          </div>
+          <p className="manager-card-quote">
             {lastChat
-              ? lastChat.content.replace(/\s+/g, ' ').slice(0, 88)
+              ? lastChat.content.replace(/\s+/g, ' ').slice(0, 120)
               : '聊聊收藏、尾款、旧事，或者今天的心情。'}
-          </span>
-        </span>
-        <span className="home-chat-side">
-          <span className="home-chat-schedule"><IconClock size={12} /> {chatSchedule}</span>
-          {unread && <span className="home-chat-badge">新消息</span>}
-          <IconChevronRight size={15} />
-        </span>
-      </button>
+          </p>
+          <div className="manager-card-foot">
+            <span><IconClock size={13} /> {chatSchedule}</span>
+            <span className="link">去聊天 <IconChevronRight size={13} /></span>
+          </div>
+        </button>
+      </section>
+
+      {recent.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h3>最近摆弄的</h3>
+            <button type="button" className="link" onClick={() => onGoCollection()}>
+              全部 {items.length} 件 <IconChevronRight size={13} />
+            </button>
+          </div>
+          <div className="shelf">
+            {recent.map((item) => (
+              <button type="button" className="shelf-item" key={item.id} onClick={() => onOpenItem(item)}>
+                <span className="shelf-cover">
+                  {item.photos?.length
+                    ? <img src={photoUrl(itemCover(item), true)} alt="" loading="lazy" />
+                    : <IconGallery size={22} />}
+                  <span className={cx('status-dot', `tone-${item.status}`)} />
+                </span>
+                <span className="shelf-name">{item.name}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
-
-
-

@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
-import type { Item, ItemStatus } from '../types';
+import type { Character, Item, ItemStatus } from '../types';
 import {
-  STATUS_META, formatMoney, itemCover, pendingTail, photoUrl, statusLabel, totalSpent, typeLabel,
+  formatDateCN, formatMoney, itemCover, pendingTail, photoUrl, statusLabel, totalSpent, typeLabel,
 } from '../constants';
-import { formatDateCN } from '../constants';
-import {
-  IconAlert, IconChevronRight, IconGallery, IconPencil, IconPlus, IconSearch, IconWallet,
-} from '../icons';
-import { EmptyState, Chip } from '../components/ui';
+import { IconAlert, IconGallery, IconPencil, IconPlus, IconSearch, IconX } from '../icons';
+import { EmptyState } from '../components/ui';
+import { cx } from '../utils';
+
+type SortKey = 'recent' | 'name' | 'price';
 
 export function CollectionPage({
   items,
+  characters,
   filter,
   onFilterChange,
   onAdd,
@@ -18,6 +19,7 @@ export function CollectionPage({
   onEdit,
 }: {
   items: Item[];
+  characters: Character[];
   filter: ItemStatus | 'all';
   onFilterChange: (filter: ItemStatus | 'all') => void;
   onAdd: () => void;
@@ -25,6 +27,7 @@ export function CollectionPage({
   onEdit: (item: Item) => void;
 }) {
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<SortKey>('recent');
 
   const counts = useMemo(() => ({
     all: items.length,
@@ -35,12 +38,19 @@ export function CollectionPage({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return items.filter((item) => {
+    const list = items.filter((item) => {
       if (filter !== 'all' && item.status !== filter) return false;
       if (!q) return true;
-      return `${item.name} ${item.series || ''} ${item.scale || ''} ${typeLabel(item.type)}`.toLowerCase().includes(q);
+      const character = characters.find((c) => c.id === item.characterId);
+      return `${item.name} ${item.series || ''} ${item.scale || ''} ${typeLabel(item.type)} ${character?.name || ''} ${character?.source || ''}`
+        .toLowerCase()
+        .includes(q);
     });
-  }, [items, filter, search]);
+    if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+    else if (sort === 'price') list.sort((a, b) => (b.purchasePrice ?? b.originalPrice ?? 0) - (a.purchasePrice ?? a.originalPrice ?? 0));
+    else list.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+    return list;
+  }, [items, characters, filter, search, sort]);
 
   const tabs: { value: ItemStatus | 'all'; label: string }[] = [
     { value: 'all', label: '全部' },
@@ -49,38 +59,52 @@ export function CollectionPage({
     { value: 'watching', label: '观望中' },
   ];
 
+  const tail = pendingTail(items);
+
   return (
-    <div className="page collection-page">
+    <div className="page collection">
       <header className="page-head">
         <div>
           <div className="eyebrow">THE COLLECTION</div>
           <h1>收藏室</h1>
           <p className="page-sub">
             {items.length
-              ? `共 ${items.length} 件周边 · 累计投入 ${formatMoney(totalSpent(items))}${pendingTail(items) ? ` · 还在等 ${formatMoney(pendingTail(items))} 的尾款` : ''}`
+              ? `共 ${items.length} 件 · 累计投入 ${formatMoney(totalSpent(items))}${tail ? ` · 尾款待补 ${formatMoney(tail)}` : ''}`
               : '柜子还是空的。把她带进来，才会有故事。'}
           </p>
         </div>
-        <button className="btn btn-primary" onClick={onAdd}><IconPlus size={16} /> 添加周边</button>
+        <button type="button" className="btn btn-primary hide-narrow" onClick={onAdd}>
+          <IconPlus size={16} /> 添加周边
+        </button>
       </header>
 
-      <div className="collection-toolbar">
-        <div className="filter-tabs">
+      <div className="toolbar">
+        <div className="segmented scroll-x">
           {tabs.map((tab) => (
             <button
+              type="button"
               key={tab.value}
-              className={`filter-tab ${filter === tab.value ? 'active' : ''}`}
+              className={cx(filter === tab.value && 'active', tab.value !== 'all' && `tone-${tab.value}`)}
               onClick={() => onFilterChange(tab.value)}
             >
               {tab.label}
-              <span>{counts[tab.value]}</span>
+              <span className="count">{counts[tab.value]}</span>
             </button>
           ))}
         </div>
-        <div className="search-box">
-          <IconSearch size={15} />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜名字、作品、规格…" />
-          {search && <button onClick={() => setSearch('')} aria-label="清空">×</button>}
+        <div className="toolbar-right">
+          <label className="search">
+            <IconSearch size={15} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜名字、角色、作品…" />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} aria-label="清空"><IconX size={14} /></button>
+            )}
+          </label>
+          <select className="select" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="排序">
+            <option value="recent">最近更新</option>
+            <option value="name">按名称</option>
+            <option value="price">按价格</option>
+          </select>
         </div>
       </div>
 
@@ -88,56 +112,63 @@ export function CollectionPage({
         <EmptyState
           title="这里还空着"
           desc="先放一件周边进来吧。一张照片、一个名字，她就能开始记住你。"
-          icon={<IconGallery size={34} />}
-          action={<button className="btn btn-primary" onClick={onAdd}><IconPlus size={15} /> 添加第一件</button>}
+          icon={<IconGallery size={30} />}
+          action={<button type="button" className="btn btn-primary" onClick={onAdd}><IconPlus size={15} /> 添加第一件</button>}
         />
       ) : !filtered.length ? (
         <EmptyState
-          title="这个筛选项下什么都没有"
-          desc="换个筛选，或者把新的她带进来。"
-          icon={<IconSearch size={30} />}
+          title="没有找到"
+          desc="换个筛选或关键词试试。"
+          icon={<IconSearch size={28} />}
         />
       ) : (
-        <div className="item-grid">
+        <div className="grid">
           {filtered.map((item) => {
             const cover = itemCover(item);
             const needsFull = item.status === 'owned' && item.type === 'figure' && !(item.photos || []).some((p) => p.shot === 'full');
+            const character = characters.find((c) => c.id === item.characterId);
+            const sub = character
+              ? `${character.name}${character.source ? ` · ${character.source}` : ''}`
+              : [item.series, item.scale].filter(Boolean).join(' · ') || `${item.photos.length} 张照片`;
             return (
-              <article className={`item-card status-${item.status}`} key={item.id} onClick={() => onOpen(item)}>
-                <div className="item-cover">
+              <article
+                className={cx('card-item', `tone-${item.status}`)}
+                key={item.id}
+                onClick={() => onOpen(item)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter') onOpen(item); }}
+              >
+                <div className="card-cover">
                   {cover ? (
                     <img src={photoUrl(cover, true)} alt={item.name} loading="lazy" />
                   ) : (
-                    <div className="item-cover-empty"><IconGallery size={26} /></div>
+                    <div className="card-cover-empty"><IconGallery size={26} /></div>
                   )}
-                  <span className="item-status">{statusLabel(item.status)}</span>
-                  {needsFull && <span className="item-warning"><IconAlert size={12} /> 缺全身照</span>}
+                  <span className={cx('pill', `tone-${item.status}`)}>{statusLabel(item.status)}</span>
+                  {needsFull && <span className="pill pill-warn"><IconAlert size={11} /> 缺全身照</span>}
                   <button
-                    className="item-edit"
+                    type="button"
+                    className="card-edit"
                     onClick={(event) => { event.stopPropagation(); onEdit(item); }}
                     title="编辑"
                     aria-label="编辑"
                   >
-                    <IconPencil size={15} />
+                    <IconPencil size={14} />
                   </button>
                 </div>
-                <div className="item-body">
-                  <div className="item-type">{typeLabel(item.type)}</div>
+                <div className="card-body">
+                  <div className="card-type">{typeLabel(item.type)}{item.scale ? ` · ${item.scale}` : ''}</div>
                   <h3>{item.name}</h3>
-                  <div className="item-sub">
-                    {[item.series, item.scale].filter(Boolean).join(' · ') || `${item.photos.length} 张照片`}
-                  </div>
-                  <div className="item-meta">
-                    <span className="item-price">
-                      <IconWallet size={13} />
+                  <div className="card-sub">{sub}</div>
+                  <div className="card-foot">
+                    <span className="card-price">
                       {item.status === 'pending'
                         ? `尾款 ${formatMoney(item.balance)}`
                         : formatMoney(item.purchasePrice ?? item.originalPrice)}
                     </span>
-                    {item.dueDate ? (
-                      <span className="item-due">{formatDateCN(item.dueDate)}</span>
-                    ) : (
-                      <span className="item-more">查看 <IconChevronRight size={12} /></span>
+                    {item.dueDate && item.status === 'pending' && (
+                      <span className="card-due">{formatDateCN(item.dueDate).replace(/^\d+年/, '')}</span>
                     )}
                   </div>
                 </div>
@@ -146,18 +177,6 @@ export function CollectionPage({
           })}
         </div>
       )}
-
-      {filtered.length > 0 && (
-        <div className="collection-summary">
-          {(['owned', 'pending', 'watching'] as ItemStatus[]).map((status) => (
-            <div key={status} className={`summary-pill status-${status}`}>
-              <Chip tone={status}>{STATUS_META[status].label}</Chip>
-              <b>{counts[status]}</b>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
-

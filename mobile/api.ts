@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import type { Character, Config, HfApi, Item, Photo, Shot, UpdateInfo } from '../src/types';
@@ -547,10 +548,22 @@ export function installMobileApi() {
       },
       openRelease: async () => {
         const url = lastUpdateInfo?.htmlUrl || appConfig.repoUrl;
-        if (url) window.open(url, '_blank');
+        if (!url) return;
+        if (Capacitor.isNativePlatform()) {
+          await Browser.open({ url });
+        } else {
+          window.open(url, '_blank');
+        }
       },
     },
-    openExternal: async (url: string) => { window.open(url, '_blank'); },
+    openExternal: async (url: string) => {
+      if (!url) return;
+      if (Capacitor.isNativePlatform()) {
+        await Browser.open({ url });
+      } else {
+        window.open(url, '_blank');
+      }
+    },
     onEvent: (callback: (event: any) => void) => {
       listeners.add(callback);
       return () => listeners.delete(callback);

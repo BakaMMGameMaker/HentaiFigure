@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, Config, Phase, RitualState } from '../types';
 import {
   PHASES, PHASE_META, formatDateCN, formatMoney, photoUrl, shotLabel, statusLabel, typeLabel,
 } from '../constants';
-import { cleanError } from '../utils';
-import { ManagerAvatar, Modal, PhotoLightbox, Spinner } from '../components/ui';
+import { cleanError, cx } from '../utils';
+import { ManagerAvatar, Modal, PhotoLightbox, Spinner, TypingDots, confirmDialog } from '../components/ui';
 import {
   IconAlert, IconArrowLeft, IconCalendar, IconCheck, IconChevronRight, IconCircleCheck,
   IconClock, IconHeart, IconImage, IconSend, IconSparkles, IconStop, IconX,
@@ -30,23 +30,17 @@ function Stepper({ state }: { state: RitualState }) {
         const status = record?.status || 'pending';
         const active = state.phase === phase && state.status !== 'complete';
         return (
-          <div key={phase} className={`step phase-${phase} ${active ? 'active' : ''} ${status === 'done' ? 'done' : ''} ${status === 'skipped' ? 'skipped' : ''}`}>
-            <span className={`step-dot ${active ? 'pulse' : ''}`}>
+          <div
+            key={phase}
+            className={cx('step', `phase-${phase}`, active && 'active', status === 'done' && 'done', status === 'skipped' && 'skipped')}
+          >
+            <span className={cx('step-dot', active && 'pulse')}>
               {status === 'done' ? <IconCheck size={11} /> : index + 1}
             </span>
             <span className="step-label">{PHASE_META[phase].label}</span>
-            <span className="step-name">{record?.itemId && (state.progress.find((p) => p.phase === phase)?.itemName || '')}</span>
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function TypingDots() {
-  return (
-    <div className="typing">
-      <span /><span /><span />
     </div>
   );
 }
@@ -56,6 +50,7 @@ export function RitualPage({
   autoOpen,
   config,
   apiKeySet,
+  narrow,
   onExit,
   onRefreshData,
   onOpenSettings,
@@ -66,6 +61,7 @@ export function RitualPage({
   autoOpen: boolean;
   config: Config | null;
   apiKeySet: boolean;
+  narrow: boolean;
   onExit: () => void;
   onRefreshData: () => Promise<void> | void;
   onOpenSettings: () => void;
@@ -92,7 +88,6 @@ export function RitualPage({
   const stickRef = useRef(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const autoOpenedRef = useRef(false);
 
   const activeSessionId = state.session?.id || null;
   const day = state.day;
@@ -189,7 +184,6 @@ export function RitualPage({
     if (initialState.session) {
       considerGenerate(initialState.session);
     } else if (autoOpen && apiKeySet && initialState.status === 'in_progress' && initialState.phase) {
-      autoOpenedRef.current = true;
       void openPhase();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -209,7 +203,7 @@ export function RitualPage({
     const el = inputRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(168, Math.max(48, el.scrollHeight))}px`;
+    el.style.height = `${Math.min(160, Math.max(40, el.scrollHeight))}px`;
   }, [input]);
 
   const openPhase = async () => {
@@ -305,7 +299,12 @@ export function RitualPage({
   };
 
   const skipPhase = async () => {
-    if (!window.confirm('跳过这个阶段？这段对话会直接归档，不再继续。')) return;
+    const ok = await confirmDialog({
+      title: '跳过这个阶段？',
+      message: '这段对话会直接归档，不再继续。',
+      confirmText: '跳过',
+    });
+    if (!ok) return;
     setFinishing(true);
     try {
       const result = await window.hf.ritual.skip(day);
@@ -319,16 +318,14 @@ export function RitualPage({
     }
   };
 
-  const complete = (() => {
-    if (!isComplete) return null;
+  if (isComplete) {
     return (
-      <div className="ritual-complete page">
-        <div className="complete-glow" />
+      <div className="page ritual-complete">
         <div className="complete-stamp">
-          <IconCheck size={38} />
+          <IconCheck size={34} />
           <span>贡</span>
         </div>
-        <div className="eyebrow">TODAY'S OFFERING · COMPLETE</div>
+        <div className="eyebrow">TODAY&apos;S OFFERING · COMPLETE</div>
         <h1>今日份上贡完毕</h1>
         <p className="complete-sub">
           {formatDateCN(state.day)}。灰尘擦过了，欲望说过了，购物车也翻过了。
@@ -339,40 +336,38 @@ export function RitualPage({
             const record = state.phases?.[phase];
             const progress = state.progress.find((p) => p.phase === phase);
             return (
-              <div key={phase} className={`complete-phase ${record?.status || 'pending'}`}>
-                <span className={`phase-chip phase-${phase}`}>{PHASE_META[phase].label}</span>
+              <div key={phase} className={cx('complete-phase', record?.status || 'pending')}>
+                <span className={cx('pill', `phase-${phase}`)}>{PHASE_META[phase].label}</span>
                 <span className="complete-phase-name">
                   {record?.status === 'skipped' ? '（跳过）' : progress?.itemName || '没有对象'}
                 </span>
-                {record?.status === 'done' ? <IconCheck size={15} /> : <span className="complete-phase-dash">—</span>}
+                {record?.status === 'done' ? <IconCheck size={15} /> : <span className="muted">—</span>}
               </div>
             );
           })}
         </div>
         <div className="complete-actions">
-          <button className="btn btn-primary" onClick={onExit}>
+          <button type="button" className="btn btn-primary" onClick={onExit}>
             <IconArrowLeft size={16} /> 回到首页
           </button>
-          <button className="btn btn-soft" onClick={onViewToday}>
+          <button type="button" className="btn btn-soft" onClick={onViewToday}>
             <IconCalendar size={15} /> 回看今天
           </button>
         </div>
-        <div className="complete-foot">明天再来。管理员会等。</div>
+        <div className="muted small">明天再来。管理员会等。</div>
       </div>
     );
-  })();
-
-  if (complete) return complete;
+  }
 
   if (!state.phase) {
     return (
       <div className="page ritual-simple">
-        <button className="back-button" onClick={onExit}><IconArrowLeft size={16} /> 返回</button>
+        <button type="button" className="btn btn-ghost" onClick={onExit}><IconArrowLeft size={16} /> 返回</button>
         <div className="ritual-simple-body">
-          <IconClock size={36} />
+          <IconClock size={34} />
           <h2>现在没有正在进行的阶段</h2>
-          <p>回到首页，点「今日份上贡」重新开始。</p>
-          <button className="btn btn-primary" onClick={onExit}>回首页</button>
+          <p className="muted">回到首页，点「开始今日份上贡」重新开始。</p>
+          <button type="button" className="btn btn-primary" onClick={onExit}>回首页</button>
         </div>
       </div>
     );
@@ -381,60 +376,71 @@ export function RitualPage({
   const introScreen = showIntro || !state.session;
 
   return (
-    <div className={`ritual-page phase-${state.phase}`}>
+    <div className={cx('ritual-shell', `phase-${state.phase}`)}>
       <header className="ritual-top">
-        <button className="back-button" onClick={onExit}>
-          <IconArrowLeft size={16} /> 离开
+        <button type="button" className="icon-btn" onClick={onExit} title="离开" aria-label="离开">
+          <IconArrowLeft size={19} />
         </button>
         <Stepper state={state} />
-        <div className="ritual-day">{formatDateCN(state.day)}</div>
+        {!narrow && <div className="ritual-day">{formatDateCN(state.day)}</div>}
       </header>
 
       {introScreen ? (
-        <div className="ritual-intro page">
-          <div className={`phase-intro-card phase-${state.phase}`}>
-            <div className="phase-intro-side">
-              <span className="phase-intro-number">0{currentStepIndex + 1}</span>
-              <span className="phase-intro-cn">{phaseMeta?.label}</span>
+        <div className="page ritual-intro">
+          <div className={cx('panel intro-card', `phase-${state.phase}`)}>
+            <div className="intro-side">
+              <span className="intro-num">0{currentStepIndex + 1}</span>
+              <span className="intro-cn">{phaseMeta?.label}</span>
             </div>
-            <div className="phase-intro-main">
+            <div className="intro-main">
               <div className="eyebrow">{phaseMeta?.label.toUpperCase()} STAGE</div>
-              <h1>{state.phase === 'wipe' ? '把灰尘擦掉，也把嘴张开。' : state.phase === 'fantasy' ? '她还没到，但你可以先想。' : '她还在购物车里，等你一句话。'}</h1>
+              <h1>
+                {state.phase === 'wipe'
+                  ? '把灰尘擦掉，也把嘴张开。'
+                  : state.phase === 'fantasy'
+                    ? '她还没到，但你可以先想。'
+                    : '她还在购物车里，等你一句话。'}
+              </h1>
               <p>{phaseMeta?.desc}</p>
-              <div className="phase-intro-meta">
+              <div className="intro-meta">
                 <span><IconSparkles size={14} /> 本轮对象：{state.eligible[state.phase]} 件</span>
                 <span><IconHeart size={14} /> 管理员会先开口</span>
               </div>
               {lastSummary && (
-                <div className="last-summary">
-                  <span>上一段，管理员记住了：</span>
+                <div className="callout">
+                  <div className="callout-title">上一段，管理员记住了</div>
                   <p>{lastSummary}</p>
                 </div>
               )}
-              <div className="phase-intro-actions">
-                <button className="btn btn-primary" onClick={openPhase} disabled={opening || !apiKeySet}>
+              <div className="intro-actions">
+                <button type="button" className="btn btn-primary" onClick={() => void openPhase()} disabled={opening || !apiKeySet}>
                   {opening ? <Spinner size={16} /> : <IconSparkles size={16} />}
                   {opening ? '正在挑一款…' : `开始${phaseMeta?.label}`}
                 </button>
-                <button className="btn btn-ghost" onClick={skipPhase} disabled={opening || finishing}>跳过本阶段</button>
+                <button type="button" className="btn btn-ghost" onClick={() => void skipPhase()} disabled={opening || finishing}>
+                  跳过本阶段
+                </button>
               </div>
               {!apiKeySet && (
-                <button className="setup-hint inline" onClick={onOpenSettings}>
-                  <IconAlert size={14} /> 还没配置 API Key，管理员开不了口 <IconChevronRight size={13} />
+                <button type="button" className="banner banner-rose" onClick={onOpenSettings}>
+                  <IconAlert size={14} />
+                  <span>还没配置 API Key，管理员开不了口</span>
+                  <span className="banner-cta">去设置 <IconChevronRight size={13} /></span>
                 </button>
               )}
-              {error && <div className="chat-error">{error}</div>}
-              <div className="phase-intro-note">
-                <IconClock size={13} /> 开始后管理员先开口。你说一句，管理员接一句，直到你亲手结束。
+              {error && <div className="chat-error"><IconAlert size={15} /><span>{error}</span></div>}
+              <div className="muted small">
+                <IconClock size={12} /> 开始后管理员先开口。你说一句，管理员接一句，直到你亲手结束。
               </div>
             </div>
           </div>
+
           <div className="intro-phases">
             {PHASES.map((phase, index) => {
               const record = state.phases?.[phase];
               const active = state.phase === phase;
               return (
-                <div key={phase} className={`intro-phase ${active ? 'active' : ''} ${record?.status || ''}`}>
+                <div key={phase} className={cx('intro-phase', active && 'active', record?.status)}>
                   <span className="intro-phase-index">0{index + 1}</span>
                   <div>
                     <strong>{PHASE_META[phase].label}</strong>
@@ -449,71 +455,81 @@ export function RitualPage({
           </div>
         </div>
       ) : (
-        <div className="ritual-layout">
-          <aside className="ritual-item">
-            <div className="item-gallery">
-              {mainPhoto ? (
-                <button className="item-gallery-main" onClick={() => setLightbox(true)}>
-                  <img src={photoUrl(mainPhoto.file)} alt={state.item?.name || ''} />
-                  <span className="item-gallery-tag">{shotLabel(mainPhoto.shot)}</span>
-                  <span className="item-gallery-zoom"><IconImage size={14} /> 点击看大图</span>
-                </button>
-              ) : (
-                <div className="item-gallery-main empty"><IconImage size={28} /></div>
-              )}
-              {photos.length > 1 && (
-                <div className="item-gallery-thumbs">
-                  {photos.map((photo, index) => (
-                    <button
-                      key={photo.id}
-                      className={index === photoIndex ? 'active' : ''}
-                      onClick={() => setPhotoIndex(index)}
-                      title={photo.caption || shotLabel(photo.shot)}
-                    >
-                      <img src={photoUrl(photo.thumbFile || photo.file, true)} alt="" loading="lazy" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="ritual-item-info">
-              <div className="ritual-item-status">{statusLabel(state.item?.status)} · {typeLabel(state.item?.type)}</div>
-              <h2>{state.item?.name}</h2>
-              {state.item?.series && <div className="ritual-item-series">{state.item.series}{state.item.scale ? ` · ${state.item.scale}` : ''}</div>}
-              <div className="ritual-item-prices">
-                <div><span>购入</span><b>{formatMoney(state.item?.purchasePrice ?? state.item?.originalPrice)}</b></div>
-                <div><span>定金</span><b>{formatMoney(state.item?.deposit)}</b></div>
-                <div><span>尾款</span><b>{formatMoney(state.item?.balance)}</b></div>
-                {state.item?.dueDate && <div><span>补款</span><b>{state.item.dueDate.slice(5)}</b></div>}
+        <div className="ritual-body">
+          {!narrow && (
+            <aside className="ritual-item">
+              <div className="ritual-gallery">
+                {mainPhoto ? (
+                  <button type="button" className="ritual-photo" onClick={() => setLightbox(true)}>
+                    <img src={photoUrl(mainPhoto.file)} alt={state.item?.name || ''} />
+                    <span className="detail-tag">{shotLabel(mainPhoto.shot)}</span>
+                  </button>
+                ) : (
+                  <div className="ritual-photo empty"><IconImage size={28} /></div>
+                )}
+                {photos.length > 1 && (
+                  <div className="ritual-thumbs">
+                    {photos.map((photo, index) => (
+                      <button
+                        type="button"
+                        key={photo.id}
+                        className={cx(index === photoIndex && 'active')}
+                        onClick={() => setPhotoIndex(index)}
+                        title={photo.caption || shotLabel(photo.shot)}
+                      >
+                        <img src={photoUrl(photo.thumbFile || photo.file, true)} alt="" loading="lazy" />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              {(state.item?.thought || state.item?.intro) && (
-                <div className="ritual-item-intro">
-                  <span>你最初写的</span>
-                  <p>{state.item.thought || state.item.intro}</p>
-                </div>
-              )}
-              <div className="ritual-item-memory">
-                <IconHeart size={13} /> 管理员记得你们所有的过去
-              </div>
-            </div>
-          </aside>
 
-          <section className="chat-panel">
+              <div className="ritual-info">
+                <span className={cx('pill', `tone-${state.item?.status}`)}>
+                  {statusLabel(state.item?.status)} · {typeLabel(state.item?.type)}
+                </span>
+                <h2>{state.item?.name}</h2>
+                {state.item?.series && (
+                  <div className="muted small">{state.item.series}{state.item.scale ? ` · ${state.item.scale}` : ''}</div>
+                )}
+                <div className="price-strip">
+                  <div><span>购入</span><b>{formatMoney(state.item?.purchasePrice ?? state.item?.originalPrice)}</b></div>
+                  <div><span>定金</span><b>{formatMoney(state.item?.deposit)}</b></div>
+                  <div><span>尾款</span><b>{formatMoney(state.item?.balance)}</b></div>
+                  {state.item?.dueDate && <div><span>补款</span><b>{state.item.dueDate.slice(5)}</b></div>}
+                </div>
+                {(state.item?.thought || state.item?.intro) && (
+                  <div className="callout">
+                    <div className="callout-title">你最初写的</div>
+                    <p>{state.item.thought || state.item.intro}</p>
+                  </div>
+                )}
+                <div className="muted small"><IconHeart size={12} /> 管理员记得你们所有的过去</div>
+              </div>
+            </aside>
+          )}
+
+          <section className="chat-main">
             <header className="chat-head">
-              <ManagerAvatar src={config?.managerAvatar} className={`chat-avatar phase-${state.phase}`} />
+              <ManagerAvatar src={config?.managerAvatar} />
               <div className="chat-head-text">
                 <strong>收藏室管理员</strong>
                 <span><span className="online-dot" /> {busy ? '正在说话…' : '在线，替你看着仓库'}</span>
               </div>
-              <div className={`phase-chip phase-${state.phase}`}>{phaseMeta?.label}</div>
+              {narrow && mainPhoto && (
+                <button type="button" className="ritual-mini-item" onClick={() => setLightbox(true)}>
+                  <img src={photoUrl(mainPhoto.thumbFile || mainPhoto.file, true)} alt="" />
+                  <span>{state.item?.name}</span>
+                </button>
+              )}
+              <span className={cx('pill', `phase-${state.phase}`)}>{phaseMeta?.label}</span>
             </header>
 
             {!apiKeySet && (
-              <button className="chat-banner" onClick={onOpenSettings}>
+              <button type="button" className="banner banner-rose" onClick={onOpenSettings}>
                 <IconAlert size={15} />
-                还没有配置 DeepSeek API Key，管理员现在说不了话。
-                <span>去设置 <IconChevronRight size={13} /></span>
+                <span>还没有配置 DeepSeek API Key，管理员现在说不了话。</span>
+                <span className="banner-cta">去设置 <IconChevronRight size={13} /></span>
               </button>
             )}
 
@@ -527,26 +543,26 @@ export function RitualPage({
               }}
             >
               <div className="chat-start-note">
-                <span>今日份上贡 · {phaseMeta?.label}</span>
+                <strong>今日份上贡 · {phaseMeta?.label}{narrow && state.item ? ` · ${state.item.name}` : ''}</strong>
                 <p>管理员先开口。你可以慢慢回，也可以在管理员说完后结束这一阶段。</p>
               </div>
 
               {messages.map((message) => (
-                <div key={message.id} className={`message-row ${message.role}`}>
-                  {message.role === 'assistant' && <ManagerAvatar src={config?.managerAvatar} className={`message-avatar phase-${state.phase}`} />}
-                  <div className="message-body">
-                    <div className="message-name">{message.role === 'assistant' ? '管理员' : userName}</div>
-                    <div className="message-bubble">{message.content}</div>
+                <div key={message.id} className={cx('msg', message.role)}>
+                  {message.role === 'assistant' && <ManagerAvatar src={config?.managerAvatar} className="msg-avatar" />}
+                  <div className="msg-body">
+                    <div className="msg-who">{message.role === 'assistant' ? '管理员' : userName}</div>
+                    <div className="msg-bubble">{message.content}</div>
                   </div>
                 </div>
               ))}
 
               {streaming && (
-                <div className="message-row assistant">
-                  <ManagerAvatar src={config?.managerAvatar} className={`message-avatar phase-${state.phase}`} />
-                  <div className="message-body">
-                    <div className="message-name">管理员</div>
-                    <div className="message-bubble streaming">
+                <div className="msg assistant">
+                  <ManagerAvatar src={config?.managerAvatar} className="msg-avatar" />
+                  <div className="msg-body">
+                    <div className="msg-who">管理员</div>
+                    <div className="msg-bubble streaming">
                       {streaming}
                       <span className="stream-caret" />
                     </div>
@@ -555,31 +571,29 @@ export function RitualPage({
               )}
 
               {busy && !streaming && (
-                <div className="message-row assistant">
-                  <ManagerAvatar src={config?.managerAvatar} className={`message-avatar phase-${state.phase}`} />
-                  <div className="message-body">
-                    <div className="message-bubble typing-bubble"><TypingDots /></div>
+                <div className="msg assistant">
+                  <ManagerAvatar src={config?.managerAvatar} className="msg-avatar" />
+                  <div className="msg-body">
+                    <div className="msg-bubble typing-bubble"><TypingDots /></div>
                   </div>
                 </div>
               )}
 
-              {toolStatus && (
-                <div className="tool-chip"><Spinner size={12} /> {toolStatus}</div>
-              )}
+              {toolStatus && <div className="tool-chip"><Spinner size={12} /> {toolStatus}</div>}
 
               {error && (
                 <div className="chat-error">
                   <IconAlert size={16} />
                   <span>{error}</span>
                   {canRetry && (
-                    <button className="text-button" onClick={() => startGeneration(activeSessionId || '')}>重试</button>
+                    <button type="button" className="link" onClick={() => startGeneration(activeSessionId || '')}>重试</button>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="chat-input-area">
-              <div className="chat-input-box">
+            <div className="composer-wrap">
+              <div className="composer">
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -590,37 +604,36 @@ export function RitualPage({
                       void send();
                     }
                   }}
-                  placeholder={busy ? '等管理员说完…' : '对管理员说点什么…（Enter 发送）'}
+                  placeholder={busy ? '等管理员说完…' : '对管理员说点什么…'}
                   disabled={busy || finishing}
                   rows={1}
                 />
-                <div className="chat-input-actions">
-                  {busy ? (
-                    <button className="send-button stop" onClick={stop} title="让她停下"><IconStop size={16} /></button>
-                  ) : (
-                    <button className="send-button" onClick={() => void send()} disabled={!input.trim() || finishing} title="发送">
-                      <IconSend size={17} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="chat-actions">
-                <button className="text-button subtle" onClick={skipPhase} disabled={finishing || busy}>跳过本阶段</button>
-                <div className="chat-actions-right">
-                  {busy && <button className="text-button subtle" onClick={stop}>停下</button>}
-                  <button className="btn btn-finish" onClick={requestFinish} disabled={finishing || busy}>
-                    <IconCircleCheck size={16} /> {phaseMeta?.finish}
+                {busy ? (
+                  <button type="button" className="send-btn stop" onClick={stop} title="让她停下" aria-label="停下">
+                    <IconStop size={16} />
                   </button>
-                </div>
+                ) : (
+                  <button type="button" className="send-btn" onClick={() => void send()} disabled={!input.trim() || finishing} title="发送" aria-label="发送">
+                    <IconSend size={16} />
+                  </button>
+                )}
+              </div>
+              <div className="composer-foot">
+                <button type="button" className="link muted" onClick={() => void skipPhase()} disabled={finishing || busy}>
+                  跳过本阶段
+                </button>
+                <button type="button" className="btn btn-soft btn-sm" onClick={requestFinish} disabled={finishing || busy}>
+                  <IconCircleCheck size={15} /> {phaseMeta?.finish}
+                </button>
               </div>
             </div>
 
             {finishing && (
-              <div className="chat-finishing">
-                <div className="chat-finishing-card">
+              <div className="ritual-finishing">
+                <div className="panel finishing-card">
                   <Spinner size={22} />
                   <strong>正在封存这一轮…</strong>
-                  <span>管理员会把今天的对话记进关于「{state.item?.name}」的记忆里。</span>
+                  <span className="muted small">管理员会把今天的对话记进关于「{state.item?.name}」的记忆里。</span>
                 </div>
               </div>
             )}
@@ -629,14 +642,14 @@ export function RitualPage({
       )}
 
       {confirmFinish && (
-        <Modal className="modal-confirm" onClose={() => setConfirmFinish(false)}>
-          <div className="confirm-card">
-            <div className="confirm-icon"><IconCircleCheck size={26} /></div>
-            <h2>{phaseMeta?.label}结束了？</h2>
-            <p>这一轮对话会归档到「{state.item?.name}」的记忆里，管理员以后会记得。之后自动进入下一阶段。</p>
+        <Modal size="sm" onClose={() => setConfirmFinish(false)} className="confirm-sheet">
+          <div className="confirm">
+            <div className="confirm-icon"><IconCircleCheck size={24} /></div>
+            <h3>{phaseMeta?.label}结束了？</h3>
+            <p className="confirm-message">这一轮对话会归档到「{state.item?.name}」的记忆里，管理员以后会记得。之后自动进入下一阶段。</p>
             <div className="confirm-actions">
-              <button className="btn btn-ghost" onClick={() => setConfirmFinish(false)}>再多说两句</button>
-              <button className="btn btn-primary" onClick={() => void doFinish()}>
+              <button type="button" className="btn btn-ghost" onClick={() => setConfirmFinish(false)}>再多说两句</button>
+              <button type="button" className="btn btn-primary" onClick={() => void doFinish()}>
                 <IconCheck size={15} /> 封存并继续
               </button>
             </div>
@@ -645,32 +658,34 @@ export function RitualPage({
       )}
 
       {instigateOpen && (
-        <Modal className="modal-instigate" onClose={() => setInstigateOpen(false)}>
-          <div className="instigate-card">
+        <Modal size="sm" onClose={() => setInstigateOpen(false)}>
+          <div className="instigate">
             <div className="instigate-head">
-              <span className="phase-chip phase-instigate">教唆</span>
-              <button className="icon-button" onClick={() => setInstigateOpen(false)}><IconX size={18} /></button>
+              <span className="pill phase-instigate">教唆</span>
+              <button type="button" className="icon-btn sm" onClick={() => setInstigateOpen(false)} aria-label="关闭">
+                <IconX size={17} />
+              </button>
             </div>
-            <h2>她下单了吗？</h2>
-            <p className="instigate-sub">「{state.item?.name}」的去留，就看你这一句话。</p>
+            <h3>她下单了吗？</h3>
+            <p className="muted small">「{state.item?.name}」的去留，就看你这一句话。</p>
             <div className="instigate-options">
-              <button className="instigate-option" onClick={() => void doFinish({ ordered: true, targetStatus: 'pending' })}>
+              <button type="button" className="instigate-option" onClick={() => void doFinish({ ordered: true, targetStatus: 'pending' })}>
                 <span className="instigate-glyph">待</span>
                 <span><strong>下单了 · 等补款</strong><small>移入待补款，下次意淫她</small></span>
                 <IconChevronRight size={16} />
               </button>
-              <button className="instigate-option" onClick={() => void doFinish({ ordered: true, targetStatus: 'owned' })}>
+              <button type="button" className="instigate-option" onClick={() => void doFinish({ ordered: true, targetStatus: 'owned' })}>
                 <span className="instigate-glyph">所</span>
                 <span><strong>下单了 · 已经到手</strong><small>直接归入已拥有</small></span>
                 <IconChevronRight size={16} />
               </button>
-              <button className="instigate-option quiet" onClick={() => void doFinish({ ordered: false })}>
+              <button type="button" className="instigate-option quiet" onClick={() => void doFinish({ ordered: false })}>
                 <span className="instigate-glyph">观</span>
                 <span><strong>还没 · 继续观望</strong><small>保持原样，这段记忆留着</small></span>
                 <IconChevronRight size={16} />
               </button>
             </div>
-            <button className="text-button instigate-cancel" onClick={() => setInstigateOpen(false)}>再回去聊聊</button>
+            <button type="button" className="link muted" onClick={() => setInstigateOpen(false)}>再回去聊聊</button>
           </div>
         </Modal>
       )}
@@ -681,9 +696,3 @@ export function RitualPage({
     </div>
   );
 }
-
-
-
-
-
-
