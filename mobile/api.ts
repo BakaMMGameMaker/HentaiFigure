@@ -490,6 +490,7 @@ export function installMobileApi() {
       freeSend: async (text: string, threadId?: string) => { await ready; return engine.sendFreeChatUserMessage(text, threadId); },
       freeGenerate: async (forceNew?: boolean, threadId?: string) => {
         await ready;
+        if (engine.freeChatBusy) return { started: false };
         const thread = threadId ? store.getThread(threadId) : store.getActiveThread();
         const last = thread?.messages?.[thread.messages.length - 1];
         if (!forceNew && last?.role === 'assistant') return { started: false };

@@ -18,6 +18,7 @@
     "app": "electron .",
     "type": "tsc --noEmit",
     "check:prompts": "node scripts/check-prompts.cjs",
+    "check:daily-chat": "node --test scripts/check-daily-chat.cjs",
     "pack": "npm run build && electron-builder --win portable --config electron-builder.yml"
   },
   "dependencies": {

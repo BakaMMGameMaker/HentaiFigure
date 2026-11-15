@@ -563,6 +563,7 @@ function registerIpc() {
   ipcMain.handle('chat:free:delete', (event, threadId) => ritual.freeDeleteThread(String(threadId || '')));
   ipcMain.handle('chat:free:send', (event, { text, threadId } = {}) => ritual.sendFreeChatUserMessage(text, threadId));
   ipcMain.handle('chat:free:generate', (event, { forceNew, threadId } = {}) => {
+    if (ritual.freeChatBusy) return { started: false };
     const thread = threadId ? store.getThread(threadId) : store.ensureActiveThread();
     const last = thread?.messages?.[thread.messages.length - 1];
     if (!forceNew && last?.role === 'assistant') return { started: false };

@@ -21,6 +21,7 @@ import { PROMPT_DEFAULTS, renderPrompt } from '../src/prompts';
 import { VIEW_ITEM_PHOTOS, createPhotoAccess } from '../electron/lib/chat-photos.mjs';
 import { LIST_COLLECTION, MEMORY_LOOKUP_TOOLS, collectionPage, readMemory, searchMemory } from '../electron/lib/chat-memory.mjs';
 import { assertVisionReady, isVisionReady } from '../electron/lib/vision-config.mjs';
+import { dailyChatScheduleChanged, isDailyChatDue } from '../electron/lib/daily-chat-schedule.mjs';
 
 const PHASE_PROMPT_KEY: Record<Phase, string> = {
   wipe: 'ritual.phaseWipe',
@@ -857,7 +858,7 @@ export class MobileEngine {
 
   freeChatState(): FreeChatState {
     const state = this.store.getFreeChat();
-    state.busy = this.freeChatBusy;
+    state.busy = this.freeChatBusy && this.freeChatThreadId === state.activeId;
     return state;
   }
 
@@ -1013,9 +1014,14 @@ export class MobileEngine {
     try { this.freeChatController?.abort(); } catch {}
   }
 
-  async generateFreeChat({ openingInstruction, proactive = false, threadId }: { openingInstruction?: string; proactive?: boolean; threadId?: string } = {}) {
+  async generateFreeChat({ openingInstruction, proactive = false, threadId, proactiveDay }: {
+    openingInstruction?: string; proactive?: boolean; threadId?: string; proactiveDay?: string;
+  } = {}) {
     if (this.freeChatBusy) return null;
-    const thread = threadId ? this.store.getThread(threadId) : await this.store.ensureActiveThread();
+    const thread = proactiveDay
+      ? this.store.newThread({ origin: 'daily' })
+      : threadId ? this.store.getThread(threadId) : await this.store.ensureActiveThread();
+    if (this.freeChatBusy) return null;
     if (!thread) throw new Error('这个对话不在了。');
     const last = thread.messages[thread.messages.length - 1];
     if (!openingInstruction && last?.role === 'assistant') return null;
@@ -1031,7 +1037,7 @@ export class MobileEngine {
     const controller = new AbortController();
     this.freeChatController = controller;
     const sessionId = thread.id;
-    const eventBase = { sessionId, threadId, channel: 'freechat' };
+    const eventBase = { sessionId, threadId: sessionId, channel: 'freechat' };
     this.emit({ type: 'chat:start', ...eventBase, proactive });
     const item = thread.itemId ? this.store.getItem(thread.itemId) : null;
     const photoAccess = this.photoAccess(item, thread.messages);
@@ -1085,18 +1091,26 @@ export class MobileEngine {
         break;
       }
       if (!finalText.trim()) throw new Error('没有收到回复内容，请重试。');
-      await emitText(finalText.trim(), (text) => this.emit({ type: 'chat:delta', ...eventBase, text }));
+      if (!proactiveDay) await emitText(finalText.trim(), (text) => this.emit({ type: 'chat:delta', ...eventBase, text }));
       const message = msg('assistant', finalText.trim(), {
         toolTrace: trace.length ? trace : undefined,
         viewedPhotoIds: photoAccess?.viewedIds.size ? [...photoAccess.viewedIds] : undefined,
       });
-      const appended = await this.store.appendThreadMessage(thread.id, message);
+      if (proactiveDay && (this.store.config.dailyChatScheduleChangedAt !== config.dailyChatScheduleChangedAt
+        || dailyChatScheduleChanged(config, this.store.config))) return null;
+      const appended = proactiveDay
+        ? await this.store.putThread({ ...thread, messages: [message] }, { proactiveDay })
+        : await this.store.appendThreadMessage(thread.id, message);
       if (!appended) {
         this.emit({ type: 'chat:stopped', ...eventBase });
         return null;
       }
-      this.emit({ type: 'chat:done', ...eventBase, message, proactive, threads: this.store.listThreadSummaries() });
-      return message;
+      this.emit({
+        type: 'chat:done', ...eventBase, message, proactive,
+        ...(proactiveDay && { lastProactiveAt: message.ts }),
+        threads: this.store.listThreadSummaries(),
+      });
+      return { message, threadId: thread.id };
     } catch (err) {
       if (controller.signal.aborted) this.emit({ type: 'chat:stopped', ...eventBase });
       else this.emit({ type: 'chat:error', ...eventBase, message: friendlyError(err) });
@@ -1152,19 +1166,19 @@ export class MobileEngine {
   }
 
   async maybeProactiveFreeChat(force = false, threadId?: string) {
-    const config = this.store.config;
+    if (this.freeChatBusy) return { skipped: true, reason: 'busy' };
+    const config = { ...this.store.config };
     if (!force && config.dailyChatEnabled === false) return { skipped: true, reason: 'disabled' };
     if (!this.store.getApiKey()) return { skipped: true, reason: 'no-key' };
     if (!force && !isVisionReady(config)) return { skipped: true, reason: 'vision-model' };
     assertVisionReady(config);
     const now = Date.now();
-    const day = this.today();
+    const day = dayKey(new Date(now));
+    const time = String(config.dailyChatTime || '22:00');
     const chat = this.store.getFreeChat();
     if (!force) {
       if (chat.lastProactiveDay === day) return { skipped: true, reason: 'done' };
-      const [hh, mm] = String(config.dailyChatTime || '22:00').split(':').map((n) => Number(n) || 0);
-      const d = new Date();
-      if (d.getHours() * 60 + d.getMinutes() < hh * 60 + mm) return { skipped: true, reason: 'not-due' };
+      if (!isDailyChatDue(now, time, config.dailyChatScheduleChangedAt)) return { skipped: true, reason: 'not-due' };
       const lastMsg = chat.lastMessage;
       if (lastMsg && now - lastMsg.ts < 30 * 60 * 1000) {
         await this.store.putFreeChat({ lastProactiveDay: day });
@@ -1172,25 +1186,20 @@ export class MobileEngine {
       }
       if (chat.lastAttemptAt && now - chat.lastAttemptAt < 10 * 60 * 1000) return { skipped: true, reason: 'cooldown' };
     }
-    if (this.freeChatBusy) return { skipped: true, reason: 'busy' };
     const name = this.userName();
-    const instruction = this.prompt('freechat.proactive', {
-      time: config.dailyChatTime || '22:00',
-      name,
-    });
+    const instruction = this.prompt('freechat.proactive', { time, name });
     try {
-      const message = await this.generateFreeChat({ openingInstruction: instruction, proactive: true, threadId });
-      if (!message) return { skipped: true, reason: 'empty' };
-      const patch: any = { lastAttemptAt: Date.now() };
-      if (!force) {
-        patch.lastProactiveDay = day;
-        patch.lastProactiveAt = Date.now();
-      }
-      await this.store.putFreeChat(patch);
-      this.emit({ type: 'free:proactive', message, threadId: this.store.getFreeChat().activeId, channel: 'freechat' });
-      return { message, threadId: this.store.getFreeChat().activeId };
+      const result = await this.generateFreeChat({
+        openingInstruction: instruction, proactive: true, threadId, proactiveDay: force ? undefined : day,
+      });
+      if (!result) return { skipped: true, reason: 'empty' };
+      if (force) await this.store.putFreeChat({ lastAttemptAt: Date.now() });
+      this.emit({ type: 'free:proactive', ...result, channel: 'freechat' });
+      return result;
     } catch (err) {
-      await this.store.putFreeChat({ lastAttemptAt: Date.now() });
+      if (force || this.store.config.dailyChatScheduleChangedAt === config.dailyChatScheduleChangedAt) {
+        await this.store.putFreeChat({ lastAttemptAt: Date.now() });
+      }
       throw err;
     }
   }

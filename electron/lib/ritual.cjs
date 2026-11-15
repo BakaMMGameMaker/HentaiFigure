@@ -6,6 +6,7 @@ const promptLib = require('./prompts.cjs');
 const { VIEW_ITEM_PHOTOS, createPhotoAccess } = require('./chat-photos.mjs');
 const { LIST_COLLECTION, MEMORY_LOOKUP_TOOLS, collectionPage, readMemory, searchMemory } = require('./chat-memory.mjs');
 const { assertVisionReady, isVisionReady } = require('./vision-config.mjs');
+const { dailyChatScheduleChanged, isDailyChatDue } = require('./daily-chat-schedule.mjs');
 
 const PHASES = ['wipe', 'fantasy', 'instigate'];
 // 阶段规则不再写死在这里，而是来自 electron/prompts.default.json
@@ -826,7 +827,7 @@ class RitualService {
     const chat = this.store.getFreeChat();
     return {
       ...chat,
-      busy: this.freeChatBusy,
+      busy: this.freeChatBusy && this.freeChatThreadId === chat.activeId,
       dailyChatEnabled: this.store.config.dailyChatEnabled !== false,
       dailyChatTime: this.store.config.dailyChatTime || '22:00',
     };
@@ -989,9 +990,11 @@ class RitualService {
     try { this.freeChatController?.abort(); } catch {}
   }
 
-  async generateFreeChat({ openingInstruction, proactive = false, threadId } = {}) {
+  async generateFreeChat({ openingInstruction, proactive = false, threadId, proactiveDay } = {}) {
     if (this.freeChatBusy) return null;
-    const thread = threadId ? this.store.getThread(threadId) : this.store.ensureActiveThread();
+    const thread = proactiveDay
+      ? this.store.newThread({ origin: 'daily' })
+      : threadId ? this.store.getThread(threadId) : this.store.ensureActiveThread();
     if (!thread) throw new Error('这个对话不在了。');
     const last = thread.messages[thread.messages.length - 1];
     if (!openingInstruction && last?.role === 'assistant') return null;
@@ -1009,7 +1012,7 @@ class RitualService {
     const controller = new AbortController();
     this.freeChatController = controller;
     const sessionId = thread.id;
-    const eventBase = { sessionId, threadId, channel: 'freechat' };
+    const eventBase = { sessionId, threadId: sessionId, channel: 'freechat' };
     this.sendEvent({ type: 'chat:start', ...eventBase, proactive });
     let full = '';
     let reasoning = '';
@@ -1099,16 +1102,21 @@ class RitualService {
         toolTrace: toolTrace.length ? toolTrace : undefined,
         viewedPhotoIds: photoAccess?.viewedIds.size ? [...photoAccess.viewedIds] : undefined,
       };
-      const appended = this.store.appendThreadMessage(thread.id, message);
+      if (proactiveDay && (this.store.config.dailyChatScheduleChangedAt !== config.dailyChatScheduleChangedAt
+        || dailyChatScheduleChanged(config, this.store.config))) return null;
+      const appended = proactiveDay
+        ? this.store.putThread({ ...thread, messages: [message] }, { proactiveDay })
+        : this.store.appendThreadMessage(thread.id, message);
       if (!appended) {
         this.sendEvent({ type: 'chat:stopped', ...eventBase });
         return null;
       }
       this.sendEvent({
         type: 'chat:done', ...eventBase, message, proactive,
+        ...(proactiveDay && { lastProactiveAt: message.ts }),
         threads: this.store.listThreadSummaries(),
       });
-      return message;
+      return { message, threadId: thread.id };
     } catch (err) {
       if (controller.signal.aborted) {
         this.sendEvent({ type: 'chat:stopped', ...eventBase });
@@ -1171,20 +1179,19 @@ class RitualService {
   }
 
   async maybeProactiveFreeChat(force = false, threadId) {
-    const config = this.store.config;
+    if (this.freeChatBusy) return { skipped: true, reason: 'busy' };
+    const config = { ...this.store.config };
     if (!force && config.dailyChatEnabled === false) return { skipped: true, reason: 'disabled' };
     if (!this.store.getApiKey()) return { skipped: true, reason: 'no-key' };
     if (!force && !isVisionReady(config)) return { skipped: true, reason: 'vision-model' };
     assertVisionReady(config);
     const now = Date.now();
-    const day = this.today();
+    const day = localDateKey(new Date(now));
+    const time = String(config.dailyChatTime || '22:00');
     const chat = this.store.getFreeChat();
     if (!force) {
       if (chat.lastProactiveDay === day) return { skipped: true, reason: 'done' };
-      const time = String(config.dailyChatTime || '22:00');
-      const [hh, mm] = time.split(':').map((n) => Number(n) || 0);
-      const date = new Date();
-      if (date.getHours() * 60 + date.getMinutes() < hh * 60 + mm) {
+      if (!isDailyChatDue(now, time, config.dailyChatScheduleChangedAt)) {
         return { skipped: true, reason: 'not-due' };
       }
       const last = chat.lastMessage;
@@ -1196,25 +1203,19 @@ class RitualService {
         return { skipped: true, reason: 'cooldown' };
       }
     }
-    if (this.freeChatBusy) return { skipped: true, reason: 'busy' };
-
     const name = this.userName();
-    const instruction = this.prompt('freechat.proactive', {
-      time: config.dailyChatTime || '22:00',
-      name,
-    });
+    const instruction = this.prompt('freechat.proactive', { time, name });
     try {
-      const message = await this.generateFreeChat({ openingInstruction: instruction, proactive: true, threadId });
-      if (!message) return { skipped: true, reason: 'empty' };
-      const patch = { lastAttemptAt: Date.now() };
-      if (!force) {
-        patch.lastProactiveDay = day;
-        patch.lastProactiveAt = Date.now();
-      }
-      this.store.putFreeChat(patch);
-      return { message, threadId: this.store.getFreeChat().activeId };
+      const result = await this.generateFreeChat({
+        openingInstruction: instruction, proactive: true, threadId, proactiveDay: force ? undefined : day,
+      });
+      if (!result) return { skipped: true, reason: 'empty' };
+      if (force) this.store.putFreeChat({ lastAttemptAt: Date.now() });
+      return result;
     } catch (err) {
-      this.store.putFreeChat({ lastAttemptAt: Date.now() });
+      if (force || this.store.config.dailyChatScheduleChangedAt === config.dailyChatScheduleChangedAt) {
+        this.store.putFreeChat({ lastAttemptAt: Date.now() });
+      }
       throw err;
     }
   }

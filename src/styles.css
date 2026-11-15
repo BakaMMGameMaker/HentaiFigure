@@ -2344,7 +2344,7 @@ button.stat:hover { background: var(--panel-hover); border-color: var(--border-s
 .prompt-field { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
 .prompt-field-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .prompt-vars { display: flex; flex-wrap: wrap; gap: 5px; }
-.prompt-actions-bar { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; }
+.prompt-reset-section { align-items: flex-start; }
 
 .update-card {
   padding: 16px;

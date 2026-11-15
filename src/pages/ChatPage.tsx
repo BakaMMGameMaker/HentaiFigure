@@ -161,7 +161,10 @@ export function ChatPage({
     setError('');
     try {
       const result = await window.hf.chat.freeGenerate(false, threadId || activeIdRef.current);
-      if (!result.started) startedRef.current = false;
+      if (!result.started) {
+        startedRef.current = false;
+        setBusy(false);
+      }
     } catch (err) {
       startedRef.current = false;
       setError(cleanError(err));
@@ -233,6 +236,7 @@ export function ChatPage({
           break;
         case 'chat:done': {
           const message = event.message as ChatMessage;
+          if (typeof event.lastProactiveAt === 'number') setLastProactiveAt(event.lastProactiveAt);
           if (isActive) {
             setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
             setStreaming('');
@@ -433,7 +437,6 @@ export function ChatPage({
         return;
       }
       if (result?.message) {
-        setLastProactiveAt(result.message.ts);
         toast('管理员挑了个新话题。', 'ok');
       }
       if (result?.threadId) {

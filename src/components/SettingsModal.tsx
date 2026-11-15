@@ -607,7 +607,7 @@ export function SettingsModal({
                   <div className="block-title">每日主动话题</div>
                   <Row
                     title="到点让管理员主动来找你"
-                    desc="管理员会读取收藏室和全部记忆，自己挑一个话题开头。应用没开的话，下次启动会补上。"
+                    desc="管理员会自己挑话题并新开一段对话。改时间后从下一次到点开始，当天错过也可以在打开应用时补发。"
                   >
                     <Switch
                       on={form.dailyChatEnabled}
@@ -650,7 +650,7 @@ export function SettingsModal({
                 <div className="settings-section">
                   <div className="block-title">提示词总览</div>
                   <p className="muted small">
-                    各组内的模板按发给模型的顺序排列。修改后点底部的「保存提示词」。
+                    各组内的模板按发给模型的顺序排列。修改后点「关闭」左边的「保存提示词」。
                   </p>
                   <div className="prompt-meta">
                     <span>{Object.keys(promptBundle?.defaults || {}).length} 条指令</span>
@@ -689,8 +689,8 @@ export function SettingsModal({
 
                 {PROMPT_SCHEMA.map((group) => (
                   <div className="settings-section" key={group.id}>
-                    <div className="block-title">{group.label}</div>
-                    <p className="muted small">{group.desc}</p>
+                    {group.label && <div className="block-title">{group.label}</div>}
+                    {group.desc && <p className="muted small">{group.desc}</p>}
                     {group.fields.map((field) => {
                       const value = promptDrafts[field.key] ?? '';
                       const overridden = Boolean(promptBundle?.overrides[field.key]);
@@ -729,15 +729,10 @@ export function SettingsModal({
                   </div>
                 ))}
 
-                <div className="settings-section prompt-actions-bar">
-                  <button type="button" className="btn btn-primary" onClick={() => void savePrompts()} disabled={promptBusy || !dirtyPromptKeys.length}>
-                    {promptBusy ? <Spinner size={15} /> : <IconCheck size={16} />}
-                    保存提示词{dirtyPromptKeys.length ? `（${dirtyPromptKeys.length}）` : ''}
-                  </button>
+                <div className="settings-section prompt-reset-section">
                   <button type="button" className="btn btn-ghost" onClick={() => void resetAllPrompts()} disabled={promptBusy}>
                     全部恢复默认
                   </button>
-                  {dirtyPromptKeys.length > 0 && <span className="muted small">有未保存的改动</span>}
                 </div>
               </>
             )}
@@ -914,12 +909,25 @@ export function SettingsModal({
           </div>
 
           <footer className="sheet-foot">
-            <div className="sheet-error">{err}</div>
+            <div className="sheet-error">
+              {err || (tab === 'prompts' && dirtyPromptKeys.length > 0 && <span className="muted small">有未保存的改动</span>)}
+            </div>
             <div className="sheet-actions">
               {showSaveFooter && (
                 <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={saving || testing}>
                   {saving ? <Spinner size={15} /> : <IconCheck size={16} />}
                   保存设置
+                </button>
+              )}
+              {tab === 'prompts' && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => void savePrompts()}
+                  disabled={promptBusy || !dirtyPromptKeys.length}
+                >
+                  {promptBusy ? <Spinner size={15} /> : <IconCheck size={16} />}
+                  保存提示词{dirtyPromptKeys.length ? `（${dirtyPromptKeys.length}）` : ''}
                 </button>
               )}
               <button type="button" className="btn btn-ghost" onClick={onClose}>关闭</button>

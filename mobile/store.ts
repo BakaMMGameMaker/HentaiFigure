@@ -3,6 +3,7 @@ import type {
 } from '../src/types';
 import { PROMPT_DEFAULTS, resolvePrompts } from '../src/prompts';
 import { DEEPSEEK_URL, DEFAULT_VISION_MODEL, isVisionReady, migrateVisionModel } from '../electron/lib/vision-config.mjs';
+import { dailyChatScheduleChanged } from '../electron/lib/daily-chat-schedule.mjs';
 
 const DB_NAME = 'hentaifigure';
 const DB_VERSION = 2;
@@ -26,6 +27,7 @@ export interface MobileConfig {
   autoUpdate: boolean;
   dailyChatEnabled: boolean;
   dailyChatTime: string;
+  dailyChatScheduleChangedAt: number;
   apiKey: string;
 }
 
@@ -38,6 +40,8 @@ export interface FreeChat {
   createdAt: number;
   updatedAt: number;
 }
+
+type NewThreadOptions = { title?: string; origin?: ChatThread['origin']; itemId?: string | null };
 
 const DEFAULT_THREAD_TITLE = '新的对话';
 
@@ -55,6 +59,7 @@ const DEFAULT_CONFIG: MobileConfig = {
   autoUpdate: true,
   dailyChatEnabled: true,
   dailyChatTime: '22:00',
+  dailyChatScheduleChangedAt: 0,
   apiKey: '',
 };
 
@@ -378,6 +383,7 @@ export class MobileStore {
   }
 
   async updateConfig(patch: Partial<MobileConfig> & { apiKey?: string; clearApiKey?: boolean }) {
+    if (dailyChatScheduleChanged(this.config, patch)) this.config.dailyChatScheduleChangedAt = Date.now();
     const allowed: (keyof MobileConfig)[] = [
       'baseUrl', 'model', 'verifiedVision', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
       'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
@@ -593,9 +599,9 @@ export class MobileStore {
     return this.getFreeChat();
   }
 
-  async createThread({ title, origin = 'manual', itemId = null }: { title?: string; origin?: 'manual' | 'daily' | 'item'; itemId?: string | null } = {}): Promise<ChatThread> {
+  newThread({ title, origin = 'manual', itemId = null }: NewThreadOptions = {}): ChatThread {
     const now = Date.now();
-    const thread: ChatThread = {
+    return {
       id: this.newId('thr'),
       title: title || DEFAULT_THREAD_TITLE,
       messages: [],
@@ -604,6 +610,10 @@ export class MobileStore {
       origin,
       itemId: itemId || null,
     };
+  }
+
+  async createThread(options?: NewThreadOptions): Promise<ChatThread> {
+    const thread = this.newThread(options);
     this.freechat.threads[thread.id] = thread;
     this.freechat.activeId = thread.id;
     await this.saveFreeChat();
@@ -616,7 +626,7 @@ export class MobileStore {
     return this.createThread({});
   }
 
-  async putThread(thread: ChatThread) {
+  async putThread(thread: ChatThread, { proactiveDay }: { proactiveDay?: string } = {}) {
     const messages = Array.isArray(thread.messages) ? thread.messages : [];
     thread.updatedAt = Date.now();
     thread.createdAt = Number(thread.createdAt) || Date.now();
@@ -625,7 +635,13 @@ export class MobileStore {
       if (first) thread.title = makeThreadTitle(first.content);
     }
     this.freechat.threads[thread.id] = normalizeThread(thread.id, thread)!;
-    this.freechat.activeId = thread.id;
+    if (proactiveDay) {
+      this.freechat.lastProactiveDay = proactiveDay;
+      this.freechat.lastProactiveAt = messages[0].ts;
+      this.freechat.lastAttemptAt = messages[0].ts;
+    }
+    if (!proactiveDay || !this.freechat.activeId) this.freechat.activeId = thread.id;
+    this.freechat.updatedAt = Date.now();
     await this.saveFreeChat();
     return this.getThread(thread.id);
   }

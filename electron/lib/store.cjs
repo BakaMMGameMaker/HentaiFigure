@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const promptLib = require('./prompts.cjs');
 const { DEEPSEEK_URL, DEFAULT_VISION_MODEL, isVisionReady, migrateVisionModel } = require('./vision-config.mjs');
+const { dailyChatScheduleChanged } = require('./daily-chat-schedule.mjs');
 
 // 默认人格来自 electron/prompts.default.json（键 persona），
 // 不在代码里写死；用户可以在进阶设置里单独覆盖，或由开发人员模式写回默认文件。
@@ -24,6 +25,7 @@ const DEFAULT_CONFIG = {
   autoUpdate: true,
   dailyChatEnabled: true,
   dailyChatTime: '22:00',
+  dailyChatScheduleChangedAt: 0,
   apiKeyEnc: null,
   apiKey: null,
 };
@@ -436,6 +438,7 @@ class Store {
   }
 
   updateConfig(patch) {
+    if (dailyChatScheduleChanged(this.config, patch)) this.config.dailyChatScheduleChangedAt = Date.now();
     const allowed = [
       'baseUrl', 'model', 'verifiedVision', 'temperature', 'maxPhotosPerRequest', 'imageDetail',
       'autoUpdate', 'dailyChatEnabled', 'dailyChatTime',
@@ -674,11 +677,14 @@ class Store {
     return this.getActiveThread();
   }
 
-  createThread({ title, origin = 'manual', itemId = null } = {}) {
-    const id = this.newId('thr');
-    const thread = newThread(id, { title, origin, itemId });
-    this.freechat.threads[id] = thread;
-    this.freechat.activeId = id;
+  newThread(options) {
+    return newThread(this.newId('thr'), options);
+  }
+
+  createThread(options) {
+    const thread = this.newThread(options);
+    this.freechat.threads[thread.id] = thread;
+    this.freechat.activeId = thread.id;
     this.saveFreeChat();
     return clone(thread);
   }
@@ -689,10 +695,9 @@ class Store {
     return this.createThread({});
   }
 
-  putThread(thread) {
+  putThread(thread, { proactiveDay } = {}) {
     if (!thread || !thread.id) throw new Error('会话数据不合法。');
     const messages = Array.isArray(thread.messages) ? thread.messages : [];
-    const last = messages[messages.length - 1];
     thread.updatedAt = Date.now();
     thread.createdAt = Number(thread.createdAt) || Date.now();
     if (!thread.title || thread.title === DEFAULT_THREAD_TITLE) {
@@ -700,7 +705,12 @@ class Store {
       if (first) thread.title = makeThreadTitle(first.content, DEFAULT_THREAD_TITLE);
     }
     this.freechat.threads[thread.id] = normalizeThread(thread.id, thread);
-    this.freechat.activeId = thread.id;
+    if (proactiveDay) {
+      this.freechat.lastProactiveDay = proactiveDay;
+      this.freechat.lastProactiveAt = messages[0].ts;
+      this.freechat.lastAttemptAt = messages[0].ts;
+    }
+    if (!proactiveDay || !this.freechat.activeId) this.freechat.activeId = thread.id;
     this.saveFreeChat();
     return clone(this.freechat.threads[thread.id]);
   }

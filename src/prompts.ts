@@ -19,8 +19,8 @@ export interface PromptField {
 
 export interface PromptGroup {
   id: string;
-  label: string;
-  desc: string;
+  label?: string;
+  desc?: string;
   fields: PromptField[];
 }
 
@@ -36,10 +36,8 @@ const ITEM_CHARACTER_FIELD: PromptField = {
 export const PROMPT_SCHEMA: PromptGroup[] = [
   {
     id: 'persona',
-    label: '人格底色',
-    desc: '管理员每一次开口前的基础设定。进阶项会自动接在它后面。',
     fields: [
-      { key: 'persona', label: '人格底色', hint: '角色是谁、说话方式、边界。', vars: ['{name}'], rows: 12 },
+      { key: 'persona', label: '人格底色', hint: '管理员每一次开口前的基础设定。进阶项会自动接在它后面。', vars: ['{name}'], rows: 12 },
     ],
   },
   {
