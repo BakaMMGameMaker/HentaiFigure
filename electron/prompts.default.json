@@ -20,8 +20,8 @@
   "freechat.openingItem": "【藏品话题开场】这是{name}收藏室里的「{item}」。结合当前藏品的资料与用户互动。",
   "freechat.openingDaily": "【日常开场】{name}打开了收藏室，可以根据收藏室的现状与用户互动。",
   "freechat.photoNote": "想聊外观时，可以按需查看当前藏品清单里的照片。",
-  "freechat.itemIntroCreate": "【新藏品入库】{name}刚刚把「{item}」记进了收藏室。结合当前藏品的资料与用户互动。",
-  "freechat.itemIntroUpdate": "【藏品资料更新】{name}刚重新编辑了「{item}」。\n\n{changes}\n\n结合当前藏品的资料和这次的改动与用户互动。",
+  "freechat.itemIntroCreate": "【新藏品入库】{name}刚刚把「{item}」记进了收藏室。充分浏览当前藏品的信息，按需浏览相关角色的其他藏品、最近聊过的藏品、收藏室内的其他藏品、以及你们的历史记忆，结合当前藏品，和用户进行互动。",
+  "freechat.itemIntroUpdate": "【藏品资料更新】{name}刚重新编辑了「{item}」。\n\n{changes}\n\n充分浏览当前藏品的信息，按需浏览相关角色的其他藏品、最近聊过的藏品、收藏室内的其他藏品、以及你们的历史记忆，结合当前藏品与用户的变更，和用户进行互动。",
   "freechat.proactive": "【每日主动话题】现在是 {time}，轮到你主动来找{name}。可以根据收藏室的现状与用户互动。用 list_recent_items 避免重复刚聊过的藏品和话题。",
   "summary.system": "你是记忆整理员。用简短的中文和第三人称视角，客观记录这次对话。重点保留双方对这款周边的评价、用户透露的偏好或雷点、双方约定与承诺、情绪变化。不要续写，不要评价，不要虚构，不要用第一人称。"
 }
