@@ -566,8 +566,6 @@ class RitualService {
     if (item.dueDate) lines.push(`补款日期：${dateLabel(item.dueDate)}`);
     if (item.detail) lines.push(`商品详情 / 情报（这款周边本身是什么、为什么会有）：\n${item.detail}`);
     if (item.thought) lines.push(`${name} 当时写下的「最初的想法」（他买下或加购时的心路历程，可作为鉴赏和调戏的素材）：\n${item.thought}`);
-    const photos = Array.isArray(item.photos) ? item.photos : [];
-    lines.push(`照片共 ${photos.length} 张：${photos.map((p, i) => `${i + 1}.${SHOT_LABELS[p.shot] || '照片'}${p.caption ? `（${p.caption}）` : ''}`).join('、')}`);
     return lines.join('\n');
   }
 
