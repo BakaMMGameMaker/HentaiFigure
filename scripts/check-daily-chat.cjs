@@ -55,6 +55,8 @@ test('修改为零点后从次日生效，定时话题单独保存', async (t) =
   assert.equal(saved.getThread(oldThread.id).messages.length, 1);
   assert.equal(saved.getActiveThread().id, oldThread.id);
   assert.equal(saved.getFreeChat().lastProactiveAt, result.message.ts);
+  const restarted = new RitualService({ store: saved, sendEvent: () => {} });
+  assert.equal((await restarted.freeChatLog.list(result.threadId))[0].status, 'done');
   assert.equal(events.find(({ type }) => type === 'chat:done').threadId, newThread.id);
   assert.equal((await service.maybeProactiveFreeChat()).reason, 'done');
   assert.equal(fetch.mock.callCount(), 1);
@@ -153,4 +155,48 @@ test('藏品开场只发送当前藏品资料，收藏室和相关记忆按工�
   assert.match(service.executeTool('read_memory', { session_id: manual.id }).transcript, /聊聊同角色挂件/);
   assert.equal(service.executeTool('read_character', { character_name: '测试角色' }).characterId, character.id);
   assert.equal(results.list_collection.total, 3);
+
+  const restarted = new RitualService({ store: new Store(store.root), sendEvent: () => {} });
+  const [savedLog] = await restarted.freeChatLog.list(intro.threadId);
+  assert.equal(savedLog.status, 'done');
+  assert.deepEqual(savedLog.rounds.map(({ request }) => request), [first, second]);
+  assert.deepEqual(savedLog.rounds[0].calls.map(({ name, result }) => [name, JSON.parse(result)]), Object.entries(results));
+});
+
+test('重启保留全部对话日志，删除对话会清理日志且迟到的请求不会写回', async (t) => {
+  const store = testStore(t);
+  const service = new RitualService({ store, sendEvent: () => {} });
+  const deleted = store.createThread({ title: '将删除的对话' });
+  const kept = store.createThread({ title: '保留的对话' });
+  const payload = {
+    model: 'test',
+    messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,abcd' } }] }],
+  };
+  const first = service.freeChatLog.start(kept.id);
+  first.request(payload);
+  await first.finish('done');
+  for (let i = 0; i < 30; i += 1) await service.freeChatLog.start(kept.id).finish('done');
+  const interrupted = service.freeChatLog.start(deleted.id);
+  interrupted.request(payload);
+
+  const reopened = new Store(store.root);
+  const restarted = new RitualService({ store: reopened, sendEvent: () => {} });
+  const logs = await restarted.freeChatLog.list(kept.id);
+  assert.equal(logs.length, 31);
+  const image = logs.find(({ rounds }) => rounds.length).rounds[0].request.messages[0].content[0].image_url;
+  assert.equal(image.url, 'data:image/jpeg;base64,[图片数据，4 字符]');
+  assert.equal((await restarted.freeChatLog.list(deleted.id))[0].status, 'stopped');
+
+  const pending = Promise.withResolvers();
+  t.mock.method(globalThis, 'fetch', () => pending.promise);
+  const running = restarted.generateFreeChat({ threadId: deleted.id });
+  assert.ok((await restarted.freeChatLog.list(deleted.id)).some(({ status }) => status === 'running'));
+  restarted.freeDeleteThread(deleted.id);
+  pending.resolve(reply());
+  assert.equal(await running, null);
+
+  const saved = new Store(store.root);
+  assert.equal(saved.getThread(deleted.id), null);
+  assert.equal(fs.existsSync(saved.freeChatLogPath(deleted.id)), false);
+  assert.equal(saved.listFreeChatLogs(kept.id).length, 31);
 });

@@ -330,8 +330,8 @@ export function ImageLightbox({ images, startIndex, onClose }: {
   if (!image) return null;
 
   return createPortal(
-    <div className="lightbox" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
-      <button type="button" className="lightbox-close" onClick={onClose} aria-label="关闭">
+    <div className="lightbox" role="dialog" aria-modal="true" aria-label="大图预览" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+      <button type="button" className="lightbox-close" onClick={onClose} aria-label="关闭" autoFocus>
         <IconX size={22} />
       </button>
       {images.length > 1 && (

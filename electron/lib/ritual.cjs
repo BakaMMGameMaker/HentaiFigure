@@ -172,7 +172,7 @@ class RitualService {
     this.freeChatBusy = false;
     this.freeChatController = null;
     this.freeChatThreadId = null;
-    this.freeChatLog = new FreeChatLog((threadId) => this.sendEvent({ type: 'free:log', threadId, channel: 'freechat' }));
+    this.freeChatLog = new FreeChatLog(store, (threadId) => this.sendEvent({ type: 'free:log', threadId, channel: 'freechat' }));
   }
 
   // ---------- dates ----------
@@ -850,7 +850,6 @@ class RitualService {
   freeDeleteThread(threadId) {
     if (this.freeChatBusy && this.freeChatThreadId === threadId) this.stopFreeChat(threadId);
     this.store.deleteThread(threadId);
-    this.freeChatLog.remove(threadId);
     return { state: this.freeChatState() };
   }
 
@@ -1056,7 +1055,7 @@ class RitualService {
         this.sendEvent({ type: 'chat:stopped', ...eventBase });
         return null;
       }
-      log.finish('done');
+      await log.finish('done');
       this.sendEvent({
         type: 'chat:done', ...eventBase, message, proactive,
         ...(proactiveDay && { lastProactiveAt: message.ts }),
@@ -1068,12 +1067,12 @@ class RitualService {
         this.sendEvent({ type: 'chat:stopped', ...eventBase });
       } else {
         const message = friendlyError(err);
-        log.finish('error', message.replaceAll(apiKey, '[API Key]'));
+        await log.finish('error', message.replaceAll(apiKey, '[API Key]'));
         this.sendEvent({ type: 'chat:error', ...eventBase, message });
       }
       throw err;
     } finally {
-      log.finish('stopped');
+      await log.finish('stopped');
       this.freeChatBusy = false;
       this.freeChatController = null;
       this.freeChatThreadId = null;

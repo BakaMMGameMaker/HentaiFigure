@@ -1,5 +1,5 @@
 import type {
-  Character, ChatMessage, ChatThread, ChatThreadSummary, Config, FreeChatState, Item, Session,
+  Character, ChatMessage, ChatThread, ChatThreadSummary, Config, FreeChatLogRun, FreeChatState, Item, Session,
 } from '../src/types';
 import { PROMPT_DEFAULTS, resolvePrompts } from '../src/prompts';
 import { DEEPSEEK_URL, DEFAULT_VISION_MODEL, isVisionReady, migrateVisionModel } from '../electron/lib/vision-config.mjs';
@@ -92,13 +92,24 @@ function idbGet<T>(db: IDBDatabase, key: string): Promise<T | undefined> {
   });
 }
 
-function idbPut(db: IDBDatabase, key: string, value: unknown): Promise<void> {
+function idbPut(db: IDBDatabase, key: string, value: unknown, deleteRange?: IDBKeyRange): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put(value, key);
+    const store = tx.objectStore(STORE_NAME);
+    store.put(value, key);
+    if (deleteRange) store.delete(deleteRange);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
   });
+}
+
+function freeChatLogPrefix(threadId: string): string {
+  return `freechat-log:${encodeURIComponent(threadId)}:`;
+}
+
+function freeChatLogRange(threadId: string): IDBKeyRange {
+  const prefix = freeChatLogPrefix(threadId);
+  return IDBKeyRange.bound(prefix, `${prefix}\uffff`);
 }
 
 function idbClear(db: IDBDatabase): Promise<void> {
@@ -272,9 +283,9 @@ export class MobileStore {
     if (!characters) await this.saveCharacters();
   }
 
-  private async put(key: string, value: unknown) {
+  private async put(key: string, value: unknown, deleteRange?: IDBKeyRange) {
     if (!this.db) this.db = await openDb();
-    await idbPut(this.db, key, value);
+    await idbPut(this.db, key, value, deleteRange);
   }
 
   private syncCharactersFromItems(): boolean {
@@ -567,6 +578,22 @@ export class MobileStore {
     await this.put('freechat', this.freechat);
   }
 
+  async listFreeChatLogs(threadId: string): Promise<FreeChatLogRun[]> {
+    await this.ready;
+    if (!this.db || !Object.hasOwn(this.freechat.threads, threadId)) return [];
+    const tx = this.db.transaction(STORE_NAME, 'readonly');
+    const request = tx.objectStore(STORE_NAME).getAll(freeChatLogRange(threadId));
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async saveFreeChatLog(threadId: string, run: FreeChatLogRun) {
+    if (!Object.hasOwn(this.freechat.threads, threadId)) return;
+    await this.put(`${freeChatLogPrefix(threadId)}${run.id}`, run);
+  }
+
   sortedThreads(): ChatThread[] {
     return Object.values(this.freechat.threads).slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }
@@ -682,13 +709,19 @@ export class MobileStore {
   }
 
   async deleteThread(id: string) {
-    if (!this.freechat.threads[id]) return this.getFreeChat();
+    const thread = this.freechat.threads[id];
+    if (!thread) return this.getFreeChat();
+    const { activeId } = this.freechat;
     delete this.freechat.threads[id];
-    if (this.freechat.activeId === id) {
-      const newest = this.sortedThreads()[0];
-      this.freechat.activeId = newest ? newest.id : '';
+    if (activeId === id) this.freechat.activeId = this.sortedThreads()[0]?.id || '';
+    const nextActiveId = this.freechat.activeId;
+    try {
+      await this.put('freechat', this.freechat, freeChatLogRange(id));
+    } catch (err) {
+      if (!this.freechat.threads[id]) this.freechat.threads[id] = thread;
+      if (this.freechat.activeId === nextActiveId) this.freechat.activeId = activeId;
+      throw err;
     }
-    await this.saveFreeChat();
     return this.getFreeChat();
   }
 

@@ -8,10 +8,10 @@ import { MemoryPage } from './pages/MemoryPage';
 import { RitualPage } from './pages/RitualPage';
 import { ChatPage } from './pages/ChatPage';
 import { SettingsModal } from './components/SettingsModal';
-import { ItemEditor } from './components/ItemEditor';
+import { ItemEditor, type ItemIntro } from './components/ItemEditor';
 import { ItemDetail } from './components/ItemDetail';
 import { ConfirmHost, Spinner, Toast, confirmDialog, useNarrow } from './components/ui';
-import { cleanError, cx, type ItemChange } from './utils';
+import { cleanError, cx } from './utils';
 import { todayKey } from './constants';
 import { IconBloom } from './icons';
 
@@ -179,17 +179,17 @@ export default function App() {
     if (editor) await window.hf.items.discardDraft(editor.draftId).catch(() => {});
   };
 
-  const handleSaved = async (saved: Item, meta: { mode: 'create' | 'update'; changes: ItemChange[]; notify: boolean }) => {
+  const handleSaved = async (saved: Item, intro?: ItemIntro) => {
     setEditor(null);
     await refreshData().catch((err) => showToast(cleanError(err), 'error'));
-    if (!meta.notify) return;
+    if (!intro) return;
     try {
-      const result = await window.hf.chat.itemIntro({ itemId: saved.id, mode: meta.mode, changes: meta.changes });
+      const result = await window.hf.chat.itemIntro({ itemId: saved.id, ...intro });
       if (result?.threadId) {
         setRequestedThreadId(result.threadId);
         setView('chat');
         await refreshFreeChat();
-        showToast(meta.mode === 'create' ? '管理员想跟你聊聊新收的这位。' : '管理员注意到资料变了。', 'ok');
+        showToast(intro.mode === 'create' ? '管理员想跟你聊聊新收的这位。' : '管理员注意到资料变了。', 'ok');
       } else if (result?.skipped) {
         const reasons: Record<string, string> = {
           'no-key': '请先配置 API Key',
@@ -444,7 +444,7 @@ export default function App() {
           isAndroid={isAndroid}
           onCharactersChanged={setCharacters}
           onClose={() => void closeEditor()}
-          onSaved={(saved, meta) => void handleSaved(saved, meta)}
+          onSaved={handleSaved}
           toast={showToast}
         />
       )}

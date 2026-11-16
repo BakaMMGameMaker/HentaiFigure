@@ -72,7 +72,7 @@ export const PROMPT_SCHEMA: PromptGroup[] = [
       { key: 'freechat.output', label: '系统块 · 输出要求', hint: '规定管理员回复的形式。有可查看的照片时，应用随后加上文字版照片清单。', vars: ['{name}'] },
       { key: 'freechat.openingItem', label: '开场 · 藏品话题', hint: '打开一段围绕某款周边的对话。', vars: ['{name}', '{item}', '{context}'], rows: 5 },
       { key: 'freechat.openingDaily', label: '开场 · 日常', hint: '普通聊天开始且还没有对话记录时使用。', vars: ['{name}'], rows: 4 },
-      { key: 'freechat.itemIntroCreate', label: '藏品 · 新入库', hint: '记录一款新藏品后主动开场。', vars: ['{name}', '{item}', '{context}'], rows: 6 },
+      { key: 'freechat.itemIntroCreate', label: '藏品 · 新入库', hint: '新建周边并告知管理员，或选择「重新入库」时使用。', vars: ['{name}', '{item}', '{context}'], rows: 6 },
       { key: 'freechat.itemIntroUpdate', label: '藏品 · 资料更新', hint: '{changes} 是前后差异。', vars: ['{name}', '{item}', '{changes}', '{context}'], rows: 7 },
       { key: 'freechat.proactive', label: '每日主动话题', hint: '{time} 是设定的时间。', vars: ['{time}', '{name}'], rows: 5 },
       { key: 'freechat.photoNote', label: '主动开场 · 照片说明', hint: '主动开场且有可查看的藏品照片时，接在开场指令后。', vars: ['{names}'] },

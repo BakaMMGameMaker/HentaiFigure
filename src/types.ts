@@ -276,7 +276,7 @@ export interface FreeChatLogRound {
 }
 
 export interface FreeChatLogRun {
-  id: number;
+  id: string;
   startedAt: number;
   status: 'running' | 'done' | 'stopped' | 'error';
   error?: string;

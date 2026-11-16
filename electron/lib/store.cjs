@@ -190,6 +190,7 @@ class Store {
     this.dailyPath = path.join(this.dataDir, 'daily.json');
     this.sessionsPath = path.join(this.dataDir, 'sessions.json');
     this.freechatPath = path.join(this.dataDir, 'freechat.json');
+    this.freechatLogDir = path.resolve(this.dataDir, 'freechat-logs');
 
     this.config = { ...clone(DEFAULT_CONFIG), ...readJson(this.configPath, {}) };
     const model = migrateVisionModel(this.config);
@@ -621,6 +622,32 @@ class Store {
     writeJsonAtomic(this.freechatPath, this.freechat);
   }
 
+  freeChatLogPath(threadId) {
+    const directoryName = crypto.createHash('sha256').update(String(threadId)).digest('hex');
+    return path.join(this.freechatLogDir, directoryName);
+  }
+
+  listFreeChatLogs(threadId) {
+    if (!Object.hasOwn(this.freechat.threads, threadId)) return [];
+    const dir = this.freeChatLogPath(threadId);
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (err) {
+      if (err.code === 'ENOENT') return [];
+      throw err;
+    }
+    return entries
+      .filter((entry) => entry.isFile() && /^log_[\w-]+\.json$/.test(entry.name))
+      .map((entry) => readJson(path.join(dir, entry.name), null))
+      .filter((run) => Array.isArray(run?.rounds));
+  }
+
+  saveFreeChatLog(threadId, run) {
+    if (!Object.hasOwn(this.freechat.threads, threadId)) return;
+    writeJsonAtomic(path.join(this.freeChatLogPath(threadId), `${run.id}.json`), run);
+  }
+
   /** 兼容旧接口：返回当前会话的消息，附带会话列表。 */
   getFreeChat() {
     const active = this.getActiveThread();
@@ -753,13 +780,22 @@ class Store {
   }
 
   deleteThread(id) {
-    if (!this.freechat.threads[id]) return this.getFreeChat();
-    delete this.freechat.threads[id];
-    if (this.freechat.activeId === id) {
-      const newest = this.sortedThreads()[0];
-      this.freechat.activeId = newest ? newest.id : '';
+    const thread = this.freechat.threads[id];
+    if (thread) {
+      const { activeId, updatedAt } = this.freechat;
+      delete this.freechat.threads[id];
+      if (activeId === id) this.freechat.activeId = this.sortedThreads()[0]?.id || '';
+      try {
+        this.saveFreeChat();
+      } catch (err) {
+        this.freechat.threads[id] = thread;
+        this.freechat.activeId = activeId;
+        this.freechat.updatedAt = updatedAt;
+        throw err;
+      }
     }
-    this.saveFreeChat();
+    const dir = path.resolve(this.freeChatLogPath(id));
+    if (path.dirname(dir) === this.freechatLogDir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
     return this.getFreeChat();
   }
 

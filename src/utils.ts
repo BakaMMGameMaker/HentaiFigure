@@ -1,5 +1,4 @@
 import type { Character, ChatThreadSummary, Item, ItemChange } from './types';
-export type { ItemChange };
 import { formatDateCN, formatMoney, statusLabel, typeLabel } from './constants';
 
 export function cleanError(err: unknown): string {

@@ -128,12 +128,13 @@ export class MobileEngine {
   freeChatBusy = false;
   freeChatThreadId: string | null = null;
   freeChatController: AbortController | null = null;
-  freeChatLog = new FreeChatLog((threadId) => this.emit({ type: 'free:log', threadId, channel: 'freechat' }));
+  freeChatLog: FreeChatLog;
   proactiveTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(store: MobileStore, emit: (event: any) => void) {
     this.store = store;
     this.emit = emit;
+    this.freeChatLog = new FreeChatLog(store, (threadId) => this.emit({ type: 'free:log', threadId, channel: 'freechat' }));
   }
 
   today() { return dayKey(); }
@@ -883,7 +884,6 @@ export class MobileEngine {
   async freeDeleteThread(threadId: string) {
     if (this.freeChatBusy && this.freeChatThreadId === threadId) this.stopFreeChat(threadId);
     await this.store.deleteThread(threadId);
-    this.freeChatLog.remove(threadId);
     return { state: this.freeChatState() };
   }
 
@@ -1065,7 +1065,7 @@ export class MobileEngine {
         this.emit({ type: 'chat:stopped', ...eventBase });
         return null;
       }
-      log.finish('done');
+      await log.finish('done');
       this.emit({
         type: 'chat:done', ...eventBase, message, proactive,
         ...(proactiveDay && { lastProactiveAt: message.ts }),
@@ -1076,12 +1076,12 @@ export class MobileEngine {
       if (controller.signal.aborted) this.emit({ type: 'chat:stopped', ...eventBase });
       else {
         const message = friendlyError(err);
-        log.finish('error', message.replaceAll(apiKey, '[API Key]'));
+        await log.finish('error', message.replaceAll(apiKey, '[API Key]'));
         this.emit({ type: 'chat:error', ...eventBase, message });
       }
       throw err;
     } finally {
-      log.finish('stopped');
+      await log.finish('stopped');
       this.freeChatBusy = false;
       this.freeChatController = null;
       this.freeChatThreadId = null;

@@ -51,7 +51,7 @@ function RequestRound({ round, index }: { round: FreeChatLogRound; index: number
 
 export function ChatLogModal({ threadId, onClose }: { threadId: string; onClose: () => void }) {
   const [runs, setRuns] = useState<FreeChatLogRun[] | null>(null);
-  const [selectedId, setSelectedId] = useState<number>();
+  const [selectedId, setSelectedId] = useState<string>();
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -86,7 +86,7 @@ export function ChatLogModal({ threadId, onClose }: { threadId: string; onClose:
           <>
             <label className="log-picker">
               <span>生成记录</span>
-              <select className="select" value={selected.id} onChange={(event) => setSelectedId(Number(event.target.value))}>
+              <select className="select" value={selected.id} onChange={(event) => setSelectedId(event.target.value)}>
                 {runs.map((run) => (
                   <option key={run.id} value={run.id}>
                     {new Date(run.startedAt).toLocaleString()} · {STATUS_LABEL[run.status]}
@@ -99,7 +99,7 @@ export function ChatLogModal({ threadId, onClose }: { threadId: string; onClose:
               {selected.rounds.map((round, index) => <RequestRound key={index} round={round} index={index} />)}
             </div>
           </>
-        ) : <p className="muted">本次运行还没有这段对话的模型请求记录。</p>}
+        ) : <p className="muted">这段对话还没有模型请求记录。</p>}
       </div>
     </Modal>
   );

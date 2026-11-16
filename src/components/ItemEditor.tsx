@@ -4,10 +4,13 @@ import {
   SHOT_OPTIONS, STATUS_META, TYPE_OPTIONS, formatMoney, photoUrl, shotLabel,
 } from '../constants';
 import { cleanError, cx, describeItemChanges, toNumberOrNull } from '../utils';
-import { Modal, SheetHeader, Spinner, confirmDialog } from './ui';
+import { Modal, PhotoLightbox, SheetHeader, Spinner, confirmDialog } from './ui';
 import {
-  IconAlert, IconCamera, IconCheck, IconChevronDown, IconPlus, IconSearch, IconTrash, IconUpload,
+  IconAlert, IconCamera, IconCheck, IconChevronDown, IconChevronUp, IconPlus, IconSearch, IconTrash, IconUpload,
 } from '../icons';
+
+type SaveAction = 'save' | 'notify' | 'reintroduce';
+export type ItemIntro = { mode: 'create' | 'update'; changes: ItemChange[] };
 
 type Props = {
   item?: Item | null;
@@ -18,7 +21,7 @@ type Props = {
   isAndroid?: boolean;
   onCharactersChanged: (characters: Character[]) => void;
   onClose: () => void;
-  onSaved: (item: Item, meta: { mode: 'create' | 'update'; changes: ItemChange[]; notify: boolean }) => void;
+  onSaved: (item: Item, intro?: ItemIntro) => void;
   toast: (text: string, kind?: 'ok' | 'error' | 'info') => void;
 };
 
@@ -86,7 +89,9 @@ export function ItemEditor({
     dueDate: item?.dueDate || '',
   });
   const [photos, setPhotos] = useState<Photo[]>(item?.photos || []);
-  const [saving, setSaving] = useState<'save' | 'notify' | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -100,8 +105,11 @@ export function ItemEditor({
   const searchRef = useRef<HTMLInputElement>(null);
   const characterTriggerRef = useRef<HTMLButtonElement>(null);
   const characterReturnFocus = useRef<HTMLButtonElement>(null);
+  const photoReturnFocus = useRef<HTMLButtonElement>(null);
+  const saveGroupRef = useRef<HTMLDivElement>(null);
+  const saveToggleRef = useRef<HTMLButtonElement>(null);
   const characterDialogOpen = characterForm !== null;
-  const busy = Boolean(saving) || uploading || characterBusy || confirmingPhoto;
+  const busy = saving || uploading || characterBusy || confirmingPhoto;
   const close = () => { if (!busy) onClose(); };
 
   useEffect(() => { setLocalCharacters(characters || []); }, [characters]);
@@ -114,6 +122,27 @@ export function ItemEditor({
       characterReturnFocus.current = null;
     }
   }, [characterDialogOpen]);
+  useEffect(() => {
+    if (previewIndex === null) {
+      photoReturnFocus.current?.focus({ preventScroll: true });
+      photoReturnFocus.current = null;
+    }
+  }, [previewIndex]);
+  useEffect(() => {
+    if (!saveMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !saveGroupRef.current?.contains(event.target)) {
+        setSaveMenuOpen(false);
+      }
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [saveMenuOpen]);
+
+  const closeSaveMenu = () => {
+    setSaveMenuOpen(false);
+    saveToggleRef.current?.focus({ preventScroll: true });
+  };
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -261,8 +290,9 @@ export function ItemEditor({
     }
   };
 
-  const submit = async (notify: boolean) => {
+  const submit = async (action: SaveAction) => {
     if (busy) return;
+    if (saveMenuOpen) closeSaveMenu();
     setError('');
     if (!form.name.trim()) {
       setError('先给她起个名字吧，比如「初音未来 睡莲 ver. 1/7」。');
@@ -280,7 +310,7 @@ export function ItemEditor({
       setError('补款日期格式不对。');
       return;
     }
-    setSaving(notify ? 'notify' : 'save');
+    setSaving(true);
     try {
       const saved = await window.hf.items.save({
         id: draftId,
@@ -298,18 +328,28 @@ export function ItemEditor({
         dueDate: form.dueDate,
         photos,
       });
-      const changes = notify ? describeItemChanges(item || null, saved, localCharacters) : [];
+      const mode = isNew || action === 'reintroduce' ? 'create' : 'update';
+      const changes = action === 'notify' && mode === 'update'
+        ? describeItemChanges(item || null, saved, localCharacters)
+        : [];
       toast(isNew ? '她住进收藏室了。' : '已经重新记好了。', 'ok');
-      onSaved(saved, { mode: isNew ? 'create' : 'update', changes, notify });
+      onSaved(saved, action === 'save' ? undefined : { mode, changes });
     } catch (err) {
       setError(cleanError(err));
     } finally {
-      setSaving(null);
+      setSaving(false);
     }
   };
 
   return (
-    <Modal size="xl" onClose={close} closeOnBackdrop={false} className="editor-sheet" titleId="item-editor-title" inert={characterDialogOpen}>
+    <Modal
+      size="xl"
+      onClose={saveMenuOpen ? closeSaveMenu : close}
+      closeOnBackdrop={false}
+      className="editor-sheet"
+      titleId="item-editor-title"
+      inert={characterDialogOpen || previewIndex !== null}
+    >
       <SheetHeader
         eyebrow={isNew ? 'NEW FIGURE' : 'EDIT FIGURE'}
         title={isNew ? '把新的她带进来' : '重新记一记她'}
@@ -589,7 +629,18 @@ export function ItemEditor({
             {photos.map((photo, index) => (
               <div className="photo-card" key={photo.id}>
                 <div className="photo-thumb">
-                  <img src={photoUrl(photo.thumbFile, true, photo.file)} alt={photo.caption || shotLabel(photo.shot)} loading="lazy" />
+                  <button
+                    type="button"
+                    className="photo-preview"
+                    disabled={busy}
+                    aria-label={`查看第 ${index + 1} 张大图 · ${photo.caption || shotLabel(photo.shot)}`}
+                    onClick={(event) => {
+                      photoReturnFocus.current = event.currentTarget;
+                      setPreviewIndex(index);
+                    }}
+                  >
+                    <img src={photoUrl(photo.thumbFile, true, photo.file)} alt="" loading="lazy" />
+                  </button>
                   <span className="photo-index">{String(index + 1).padStart(2, '0')}</span>
                   {photo.shot === 'full' && <span className="photo-full">全身</span>}
                   <button
@@ -639,16 +690,51 @@ export function ItemEditor({
         <div className="sheet-error" role="alert">{error}</div>
         <div className="sheet-actions">
           <button type="button" className="btn btn-ghost" onClick={close} disabled={busy}>取消</button>
-          <button type="button" className="btn btn-soft" onClick={() => void submit(false)} disabled={busy}>
-            {saving === 'save' && <Spinner size={15} />}
-            保存
-          </button>
-          <button type="button" className="btn btn-primary" onClick={() => void submit(true)} disabled={busy}>
-            {saving === 'notify' && <Spinner size={15} />}
-            保存并告知管理员
-          </button>
+          <div
+            className="editor-save"
+            ref={saveGroupRef}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setSaveMenuOpen(false);
+            }}
+          >
+            <button
+              type="button"
+              className="btn btn-primary editor-save-main"
+              onClick={() => void submit('notify')}
+              disabled={busy}
+              aria-label="保存并告知管理员"
+              title="保存并告知管理员"
+            >
+              {saving && <Spinner size={15} />}
+              保存
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary editor-save-toggle"
+              ref={saveToggleRef}
+              onClick={() => setSaveMenuOpen((open) => !open)}
+              disabled={busy}
+              aria-label="更多保存选项"
+              aria-expanded={saveMenuOpen}
+              aria-controls={saveMenuOpen ? 'item-save-options' : undefined}
+            >
+              <IconChevronUp size={15} />
+            </button>
+            {saveMenuOpen && (
+              <div className="editor-save-options" id="item-save-options" role="group" aria-label="保存选项">
+                <button type="button" onClick={() => void submit('save')}>保存但不告知管理员</button>
+                {!isNew && (
+                  <button type="button" onClick={() => void submit('reintroduce')}>重新入库</button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </footer>
+
+      {previewIndex !== null && (
+        <PhotoLightbox photos={photos} startIndex={previewIndex} onClose={() => setPreviewIndex(null)} />
+      )}
 
       {characterForm && (
         <Modal size="sm" className="character-sheet" titleId="character-dialog-title" onClose={closeCharacterForm} closeOnBackdrop={false}>

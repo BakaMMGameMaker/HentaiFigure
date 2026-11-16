@@ -1,5 +1,3 @@
-const MAX_RUNS = 30;
-
 function snapshotRequest(payload) {
   return JSON.parse(JSON.stringify(payload, (key, value) => {
     if (key !== 'image_url' || typeof value?.url !== 'string' || !value.url.startsWith('data:image/')) return value;
@@ -9,40 +7,46 @@ function snapshotRequest(payload) {
 }
 
 export class FreeChatLog {
-  runs = [];
-  nextId = 0;
+  active = null;
 
-  constructor(onUpdate) {
+  constructor(store, onUpdate) {
+    this.store = store;
     this.onUpdate = onUpdate;
   }
 
-  list(threadId) {
-    return this.runs.filter((run) => run.threadId === threadId);
-  }
-
-  remove(threadId) {
-    this.runs = this.runs.filter((run) => run.threadId !== threadId);
+  async list(threadId) {
+    const runs = await this.store.listFreeChatLogs(threadId);
+    return runs.sort((a, b) => b.startedAt - a.startedAt).map((run) => (
+      run.status === 'running' && run.id !== this.active?.id ? { ...run, status: 'stopped' } : run
+    ));
   }
 
   start(threadId) {
-    const run = { id: ++this.nextId, threadId, startedAt: Date.now(), status: 'running', rounds: [] };
-    this.runs.unshift(run);
-    if (this.runs.length > MAX_RUNS) this.runs.pop();
-    const publish = () => this.onUpdate(threadId);
-    publish();
+    const run = { id: this.store.newId('log'), startedAt: Date.now(), status: 'running', rounds: [] };
+    this.active = run;
+    const publish = async () => {
+      try {
+        await this.store.saveFreeChatLog(threadId, run);
+        this.onUpdate(threadId);
+      } catch {
+        console.warn('保存对话日志失败。');
+      }
+    };
+    void publish();
 
     return {
       request(payload) {
         const round = { request: snapshotRequest(payload), calls: [] };
         run.rounds.push(round);
-        publish();
+        void publish();
         return round;
       },
-      finish(status, error) {
+      finish: async (status, error) => {
         if (run.status !== 'running') return;
         run.status = status;
         if (error) run.error = error;
-        publish();
+        this.active = null;
+        await publish();
       },
     };
   }
