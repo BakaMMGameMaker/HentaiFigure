@@ -26,13 +26,6 @@ export interface PromptGroup {
 
 const DATA_VARS = ['{name}', '{date}', '{item}', '{context}', '{digest}', '{changes}', '{time}', '{names}', '{count}'];
 
-const ITEM_CHARACTER_FIELD: PromptField = {
-  key: 'ritual.characterBlock',
-  label: '区块 · 当前周边的角色档案（共用）',
-  hint: '藏品绑定了角色时接在周边资料后。上贡和日常聊天共用这一项。',
-  vars: ['{context}'],
-};
-
 export const PROMPT_SCHEMA: PromptGroup[] = [
   {
     id: 'persona',
@@ -51,7 +44,7 @@ export const PROMPT_SCHEMA: PromptGroup[] = [
       { key: 'ritual.phaseFantasy', label: '阶段 · 意淫', hint: '待补款的藏品，只有宣传图。', vars: ['{name}'] },
       { key: 'ritual.phaseInstigate', label: '阶段 · 教唆', hint: '观望中的藏品，逼用户做决定。', vars: ['{name}'] },
       { key: 'ritual.itemBlock', label: '区块 · 当前周边', hint: '周边资料的标题行，{context} 是应用自动生成的资料。', vars: ['{context}'] },
-      ITEM_CHARACTER_FIELD,
+      { key: 'ritual.characterBlock', label: '区块 · 当前周边的角色档案', hint: '藏品绑定了角色时接在周边资料后。', vars: ['{context}'] },
       { key: 'ritual.memoryBlock', label: '区块 · 旧记忆', hint: '往事节选的标题行。', vars: ['{digest}'] },
       { key: 'ritual.output', label: '系统块 · 输出要求', hint: '规定管理员回复的形式。有可查看的照片时，应用随后加上文字版照片清单。', vars: ['{name}'] },
       { key: 'ritual.photoNoteNoFiles', label: '系统块 · 没上传图', hint: '没有照片时，这段说明接在输出要求后，也可填入消息的 {photoNote}。', vars: [] },
@@ -74,12 +67,8 @@ export const PROMPT_SCHEMA: PromptGroup[] = [
     desc: '先发系统提示和已有对话，再按场景选用开场指令。',
     fields: [
       { key: 'freechat.scene', label: '系统块 · 日期与场景', hint: '接在人格底色后。', vars: ['{date}', '{name}'] },
-      { key: 'freechat.collectionBlock', label: '区块 · 收藏室', hint: '收藏室摘要的标题行。', vars: ['{digest}'] },
-      { key: 'freechat.characterBlock', label: '区块 · 收藏室的角色摘要', hint: '有角色档案时，插入收藏室的角色概况。', vars: ['{digest}'] },
       { key: 'freechat.itemBlock', label: '区块 · 聚焦周边', hint: '某段对话绑定周边时，插入该周边的资料。', vars: ['{context}'] },
-      ITEM_CHARACTER_FIELD,
-      { key: 'freechat.memoryBlock', label: '区块 · 旧记忆', hint: '往事节选的标题行。', vars: ['{digest}'] },
-      { key: 'freechat.tools', label: '系统块 · 工具权限', hint: '说明管理员可以查询藏品和过去的对话。', vars: [] },
+      { key: 'freechat.tools', label: '系统块 · 工具权限', hint: '说明管理员可以按需查询收藏现状、角色相关的藏品与记忆、最近聊过的藏品和全库。', vars: [] },
       { key: 'freechat.output', label: '系统块 · 输出要求', hint: '规定管理员回复的形式。有可查看的照片时，应用随后加上文字版照片清单。', vars: ['{name}'] },
       { key: 'freechat.openingItem', label: '开场 · 藏品话题', hint: '打开一段围绕某款周边的对话。', vars: ['{name}', '{item}', '{context}'], rows: 5 },
       { key: 'freechat.openingDaily', label: '开场 · 日常', hint: '普通聊天开始且还没有对话记录时使用。', vars: ['{name}'], rows: 4 },

@@ -36,6 +36,7 @@ export function Modal({
   size = 'md',
   closeOnBackdrop = true,
   titleId,
+  inert,
 }: {
   children: ReactNode;
   onClose: () => void;
@@ -43,6 +44,7 @@ export function Modal({
   size?: 'sm' | 'md' | 'lg' | 'xl';
   closeOnBackdrop?: boolean;
   titleId?: string;
+  inert?: boolean;
 }) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -70,7 +72,7 @@ export function Modal({
         if (closeOnBackdrop && event.target === event.currentTarget) onClose();
       }}
     >
-      <div className={cx('sheet', `sheet-${size}`, className)} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className={cx('sheet', `sheet-${size}`, className)} role="dialog" aria-modal="true" aria-labelledby={titleId} inert={inert}>
         {children}
       </div>
     </div>,

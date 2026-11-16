@@ -46,6 +46,44 @@ export const LIST_COLLECTION = {
   },
 };
 
+export const READ_CHARACTER = {
+  type: 'function',
+  function: {
+    name: 'read_character',
+    description: '查看角色档案、同角色的藏品清单和最近相关的上贡与日常聊天。可传角色 ID 或名称，也可省略参数查看当前周边绑定的角色。用 read_item 查藏品详情，用 read_memory 读对话原文。',
+    parameters: {
+      type: 'object',
+      properties: {
+        character_id: { type: 'string' },
+        character_name: { type: 'string', description: '角色名或能唯一匹配档案的部分名称' },
+        offset: { type: 'integer', description: '查看下一页同角色藏品时，使用上次返回的 nextOffset' },
+      },
+    },
+  },
+};
+
+export const FREE_CHAT_COLLECTION_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'get_collection_counts',
+      description: '查看收藏室里已拥有、待补款、观望中的藏品数量和总数。',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_recent_items',
+      description: '按最近聊到的时间列出曾上贡或日常聊过的藏品，只返回去重后的名称、ID、日期和对话类型。',
+      parameters: {
+        type: 'object',
+        properties: { limit: { type: 'integer', description: '返回 1–20 件，默认 8' } },
+      },
+    },
+  },
+];
+
 function asOffset(value) {
   return Math.max(0, Math.trunc(Number(value)) || 0);
 }
@@ -140,5 +178,117 @@ export function collectionPage(items, queryText, offsetValue, getSearchFields) {
     page: filtered.slice(offset, end),
     total: filtered.length,
     nextOffset: end < filtered.length ? end : null,
+  };
+}
+
+function latestMention(thread, names) {
+  return thread.messages?.findLast((message) => names.some((name) => name && matches(message.content, name)));
+}
+
+function normalizeName(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+export function listRecentItems({ items, sessions, threads, args, dateKey }) {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const byName = new Map();
+  for (const item of items) {
+    const name = normalizeName(item.name);
+    if (name) byName.set(name, byName.has(name) ? null : item.id);
+  }
+  const latest = new Map();
+  function record(id, kind, time) {
+    const item = byId.get(id);
+    if (!item || !time || time <= (latest.get(id)?.time || 0)) return;
+    latest.set(id, { id, name: item.name, kind, time });
+  }
+
+  for (const session of sessions) {
+    if (!session.messages?.length && (!session.archived || session.outcome?.skipped)) continue;
+    record(session.itemId, 'ritual', session.endedAt || session.messages?.at(-1)?.ts || session.startedAt);
+  }
+  for (const thread of threads) {
+    const last = thread.messages?.at(-1);
+    if (!last) continue;
+    const fallbackTime = thread.updatedAt || thread.createdAt;
+    record(thread.itemId, 'freechat', last.ts || fallbackTime);
+    for (const [name, id] of byName) {
+      if (!id || id === thread.itemId) continue;
+      const message = latestMention(thread, [name]);
+      if (message) record(id, 'freechat', message.ts || fallbackTime);
+    }
+  }
+  const limit = Math.max(1, Math.min(20, Math.trunc(Number(args?.limit)) || 8));
+  return {
+    items: [...latest.values()]
+      .sort((a, b) => b.time - a.time)
+      .slice(0, limit)
+      .map(({ time, ...item }) => ({ ...item, date: dateKey(new Date(time)) })),
+  };
+}
+
+export function readCharacter({ characters, items, sessions, threads, currentItem, currentThreadId, args, phaseLabel, dateKey, typeLabel }) {
+  const query = normalizeName(args?.character_name);
+  const id = args?.character_id;
+  let found;
+  if (id || !query) {
+    found = characters.filter((character) => character.id === (id || currentItem?.characterId));
+  } else {
+    const exact = characters.filter((character) => normalizeName(character.name) === query);
+    found = exact.length ? exact : characters.filter((character) => matches(character.name, query));
+  }
+  if (!found.length) return { error: '没有找到角色档案。请提供角色名或角色 ID。' };
+  if (found.length > 1) {
+    return {
+      error: '匹配到多个角色，请使用角色 ID。',
+      candidates: found.map(({ id, name, source }) => ({ characterId: id, name, source })),
+    };
+  }
+  const [character] = found;
+  const related = items.filter((item) => item.characterId === character.id);
+  const { page, nextOffset } = collectionPage(related, '', args?.offset);
+  const byId = new Map(related.map((item) => [item.id, item]));
+  const names = [character.name, ...related.map((item) => item.name)].map(normalizeName);
+  const history = sessions
+    .filter((session) => session.archived && byId.has(session.itemId))
+    .map((session) => ({
+      sessionId: session.id,
+      kind: 'ritual',
+      date: session.day,
+      phase: phaseLabel(session.phase),
+      itemName: session.itemName,
+      summary: String(session.summary || '').slice(0, 220),
+      time: session.endedAt || session.startedAt || 0,
+    }));
+  for (const thread of threads) {
+    if (thread.id === currentThreadId || !thread.messages?.length) continue;
+    const item = byId.get(thread.itemId);
+    const message = item ? thread.messages.at(-1) : latestMention(thread, names);
+    if (!message) continue;
+    const time = message.ts || thread.updatedAt || thread.createdAt;
+    history.push({
+      sessionId: thread.id,
+      kind: 'freechat',
+      date: dateKey(new Date(time)),
+      title: thread.title,
+      itemName: item?.name,
+      snippet: String(message.content || '').slice(0, 220),
+      time,
+    });
+  }
+  return {
+    characterId: character.id,
+    name: character.name,
+    source: character.source,
+    description: character.description,
+    currentItemId: byId.has(currentItem?.id) ? currentItem.id : null,
+    items: page.map((item) => ({
+      id: item.id,
+      name: item.name,
+      type: typeLabel(item.type),
+      status: item.status,
+    })),
+    nextOffset,
+    history: history.sort((a, b) => b.time - a.time).slice(0, 12).map(({ time, ...entry }) => entry),
   };
 }

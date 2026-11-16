@@ -6,7 +6,7 @@ import {
 import { cleanError, cx, describeItemChanges, toNumberOrNull } from '../utils';
 import { Modal, SheetHeader, Spinner, confirmDialog } from './ui';
 import {
-  IconAlert, IconCamera, IconCheck, IconChevronDown, IconPlus, IconSearch, IconTrash, IconUpload, IconX,
+  IconAlert, IconCamera, IconCheck, IconChevronDown, IconPlus, IconSearch, IconTrash, IconUpload,
 } from '../icons';
 
 type Props = {
@@ -96,7 +96,11 @@ export function ItemEditor({
   const [query, setQuery] = useState('');
   const [characterForm, setCharacterForm] = useState<CharacterForm | null>(null);
   const [characterBusy, setCharacterBusy] = useState(false);
+  const [characterError, setCharacterError] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+  const characterTriggerRef = useRef<HTMLButtonElement>(null);
+  const characterReturnFocus = useRef<HTMLButtonElement>(null);
+  const characterDialogOpen = characterForm !== null;
   const busy = Boolean(saving) || uploading || characterBusy || confirmingPhoto;
   const close = () => { if (!busy) onClose(); };
 
@@ -104,6 +108,12 @@ export function ItemEditor({
   useEffect(() => {
     if (pickerOpen) searchRef.current?.focus();
   }, [pickerOpen]);
+  useEffect(() => {
+    if (!characterDialogOpen) {
+      characterReturnFocus.current?.focus({ preventScroll: true });
+      characterReturnFocus.current = null;
+    }
+  }, [characterDialogOpen]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -132,21 +142,29 @@ export function ItemEditor({
     setQuery('');
   };
 
-  const openCharacterForm = (character?: Character) => {
+  const openCharacterForm = (character?: Character, opener = characterTriggerRef.current) => {
+    if (busy) return;
+    characterReturnFocus.current = opener;
+    setCharacterError('');
     setCharacterForm(character
       ? { id: character.id, name: character.name, source: character.source || '', description: character.description || '' }
       : { ...EMPTY_CHARACTER_FORM });
     setPickerOpen(false);
   };
 
+  const closeCharacterForm = () => {
+    if (characterBusy) return;
+    setCharacterForm(null);
+  };
+
   const submitCharacter = async () => {
-    if (!characterForm) return;
+    if (!characterForm || characterBusy) return;
     if (!characterForm.name.trim()) {
-      setError('角色名不能为空。');
+      setCharacterError('角色名不能为空。');
       return;
     }
     setCharacterBusy(true);
-    setError('');
+    setCharacterError('');
     try {
       const saved = await window.hf.characters.save({
         id: characterForm.id || undefined,
@@ -159,11 +177,11 @@ export function ItemEditor({
         : [saved, ...localCharacters];
       setLocalCharacters(next);
       onCharactersChanged(next);
-      set('characterId', saved.id);
+      selectCharacter(saved.id);
       setCharacterForm(null);
       toast(characterForm.id ? '角色档案已更新。' : '角色档案已建立。', 'ok');
     } catch (err) {
-      setError(cleanError(err));
+      setCharacterError(cleanError(err));
     } finally {
       setCharacterBusy(false);
     }
@@ -291,7 +309,7 @@ export function ItemEditor({
   };
 
   return (
-    <Modal size="xl" onClose={close} closeOnBackdrop={false} className="editor-sheet" titleId="item-editor-title">
+    <Modal size="xl" onClose={close} closeOnBackdrop={false} className="editor-sheet" titleId="item-editor-title" inert={characterDialogOpen}>
       <SheetHeader
         eyebrow={isNew ? 'NEW FIGURE' : 'EDIT FIGURE'}
         title={isNew ? '把新的她带进来' : '重新记一记她'}
@@ -351,23 +369,30 @@ export function ItemEditor({
             </div>
 
             <div className="field-row">
-              <Field label="角色" hint="关联角色档案">
+              <div className="field">
+                <span className="field-label">
+                  <span id="item-character-label">角色</span>
+                  <em>关联角色档案</em>
+                </span>
                 <div className="char-picker">
                   <button
+                    ref={characterTriggerRef}
                     type="button"
                     className={cx('char-trigger', pickerOpen && 'open')}
-                    onClick={() => { setPickerOpen((v) => !v); setCharacterForm(null); }}
+                    aria-labelledby="item-character-label item-character-value"
+                    aria-expanded={pickerOpen}
+                    onClick={() => setPickerOpen((v) => !v)}
                   >
                     {selectedCharacter ? (
-                      <span className="char-trigger-val">
-                        <span className="char-badge">{selectedCharacter.name.slice(0, 1)}</span>
+                      <span className="char-trigger-val" id="item-character-value">
+                        <span className="char-badge" aria-hidden="true">{selectedCharacter.name.slice(0, 1)}</span>
                         <span className="char-trigger-text">
                           <strong>{selectedCharacter.name}</strong>
                           <small>{selectedCharacter.source || '未填作品'}</small>
                         </span>
                       </span>
                     ) : (
-                      <span className="char-trigger-empty">选择角色，或新增一个</span>
+                      <span className="char-trigger-empty" id="item-character-value">选择角色，或新增一个</span>
                     )}
                     <IconChevronDown size={14} className="char-trigger-arrow" />
                   </button>
@@ -381,6 +406,7 @@ export function ItemEditor({
                           value={query}
                           onChange={(e) => setQuery(e.target.value)}
                           placeholder="搜索角色或作品"
+                          aria-label="搜索角色或作品"
                         />
                       </div>
                       <div className="char-options">
@@ -409,19 +435,19 @@ export function ItemEditor({
                           <div className="char-empty">没有匹配的角色。</div>
                         )}
                       </div>
-                      <button type="button" className="char-add" onClick={() => openCharacterForm()}>
+                      <button type="button" className="char-add" aria-haspopup="dialog" onClick={() => openCharacterForm()} disabled={busy}>
                         <IconPlus size={13} /> 新增角色
                       </button>
                     </div>
                   )}
                 </div>
-              </Field>
+              </div>
               <Field label="规格">
                 <input className="input" value={form.scale} onChange={(e) => set('scale', e.target.value)} placeholder="1/7、约 240mm" />
               </Field>
             </div>
 
-            {selectedCharacter && !characterForm && (
+            {selectedCharacter && (
               <div className="callout">
                 <div className="char-row">
                   <span className="char-badge lg">{selectedCharacter.name.slice(0, 1)}</span>
@@ -429,61 +455,19 @@ export function ItemEditor({
                     <strong>{selectedCharacter.name}</strong>
                     <small>{selectedCharacter.source ? `出自《${selectedCharacter.source}》` : '还没填作品名'}</small>
                   </div>
-                  <button type="button" className="link" onClick={() => openCharacterForm(selectedCharacter)}>
+                  <button
+                    type="button"
+                    className="link"
+                    aria-haspopup="dialog"
+                    onClick={(event) => openCharacterForm(selectedCharacter, event.currentTarget)}
+                    disabled={busy}
+                  >
                     编辑角色
                   </button>
                 </div>
                 <p className={cx('char-desc', !selectedCharacter.description && 'muted')}>
                   {selectedCharacter.description || '还没有角色背景。写几句这个角色的设定，管理员对她的印象会更清楚。'}
                 </p>
-              </div>
-            )}
-
-            {characterForm && (
-              <div className="char-form">
-                <div className="char-form-head">
-                  <strong>{characterForm.id ? '编辑角色档案' : '新增角色档案'}</strong>
-                  <button type="button" className="icon-btn sm" onClick={() => setCharacterForm(null)} aria-label="收起">
-                    <IconX size={14} />
-                  </button>
-                </div>
-                <Field label="角色名" hint="必填">
-                  <input
-                    className="input"
-                    value={characterForm.name}
-                    onChange={(e) => setCharacterForm({ ...characterForm, name: e.target.value })}
-                    placeholder="初音未来"
-                    maxLength={80}
-                  />
-                </Field>
-                <Field label="出自作品">
-                  <input
-                    className="input"
-                    value={characterForm.source}
-                    onChange={(e) => setCharacterForm({ ...characterForm, source: e.target.value })}
-                    placeholder="VOCALOID、原神、赛马娘…"
-                    maxLength={120}
-                  />
-                </Field>
-                <Field label="角色背景" hint="管理员会读">
-                  <textarea
-                    className="input textarea"
-                    rows={3}
-                    value={characterForm.description}
-                    onChange={(e) => setCharacterForm({ ...characterForm, description: e.target.value })}
-                    placeholder="她是谁、什么设定、你为什么喜欢她。这段背景会让管理员更懂这款周边。"
-                    maxLength={4000}
-                  />
-                </Field>
-                <div className="char-form-actions">
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCharacterForm(null)} disabled={characterBusy}>
-                    取消
-                  </button>
-                  <button type="button" className="btn btn-primary btn-sm" onClick={() => void submitCharacter()} disabled={characterBusy}>
-                    {characterBusy ? <Spinner size={13} /> : <IconCheck size={14} />}
-                    保存角色
-                  </button>
-                </div>
               </div>
             )}
           </div>
@@ -665,6 +649,68 @@ export function ItemEditor({
           </button>
         </div>
       </footer>
+
+      {characterForm && (
+        <Modal size="sm" className="character-sheet" titleId="character-dialog-title" onClose={closeCharacterForm} closeOnBackdrop={false}>
+          <SheetHeader
+            title={characterForm.id ? '编辑角色档案' : '新增角色档案'}
+            titleId="character-dialog-title"
+            onClose={closeCharacterForm}
+          />
+          <form
+            className="character-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitCharacter();
+            }}
+          >
+            <div className="sheet-body character-fields">
+              <Field label="角色名" hint="必填">
+                <input
+                  className="input"
+                  value={characterForm.name}
+                  onChange={(event) => setCharacterForm({ ...characterForm, name: event.target.value })}
+                  placeholder="初音未来"
+                  maxLength={80}
+                  aria-required="true"
+                  readOnly={characterBusy}
+                  autoFocus
+                />
+              </Field>
+              <Field label="出自作品">
+                <input
+                  className="input"
+                  value={characterForm.source}
+                  onChange={(event) => setCharacterForm({ ...characterForm, source: event.target.value })}
+                  placeholder="VOCALOID、原神、赛马娘…"
+                  maxLength={120}
+                  readOnly={characterBusy}
+                />
+              </Field>
+              <Field label="角色背景">
+                <textarea
+                  className="input textarea"
+                  rows={3}
+                  value={characterForm.description}
+                  onChange={(event) => setCharacterForm({ ...characterForm, description: event.target.value })}
+                  maxLength={4000}
+                  readOnly={characterBusy}
+                />
+              </Field>
+              <div className="sheet-error" role="alert">{characterError}</div>
+            </div>
+            <footer className="sheet-foot">
+              <div className="sheet-actions">
+                <button type="button" className="btn btn-ghost" onClick={closeCharacterForm} disabled={characterBusy}>取消</button>
+                <button type="submit" className="btn btn-primary" disabled={characterBusy}>
+                  {characterBusy && <Spinner size={13} />}
+                  保存角色
+                </button>
+              </div>
+            </footer>
+          </form>
+        </Modal>
+      )}
     </Modal>
   );
 }

@@ -86,3 +86,71 @@ test('错过当天时间可补发，生成失败可重试，改时间会丢弃�
   assert.ok((await service.maybeProactiveFreeChat()).message);
   assert.equal(store.getFreeChat().lastProactiveDay, '2026-11-16');
 });
+
+test('藏品开场只发送当前藏品资料，收藏室和相关记忆按工具查询', { timeout: 3000 }, async (t) => {
+  const store = testStore(t);
+  const character = store.upsertCharacter({ name: '测试角色（全名）', description: '仅查询才返回的角色背景' });
+  const focus = store.upsertItem({
+    id: 'focus', name: '当前手办', characterId: character.id, type: 'figure', status: 'owned', detail: '当前手办详情', photos: [],
+  });
+  const related = store.upsertItem({
+    id: 'related', name: '同角色挂件', characterId: character.id, type: 'other', status: 'pending', photos: [],
+  });
+  const other = store.upsertItem({
+    id: 'other', name: '无关藏品', type: 'other', status: 'watching', thought: '无关藏品的最初想法', photos: [],
+  });
+  store.putSession({
+    id: 'ritual-memory', itemId: related.id, itemName: related.name, phase: 'wipe',
+    day: '2026-11-13', startedAt: at(13, 19), endedAt: at(13, 20), archived: true,
+    summary: '旧上贡摘要', messages: [],
+  });
+  const manual = store.createThread({ title: '日常聊天' });
+  store.appendThreadMessage(manual.id, { id: 'manual-1', role: 'user', content: `聊聊${related.name}`, ts: at(14, 20) });
+  store.appendThreadMessage(manual.id, { id: 'manual-2', role: 'user', content: '换一个话题', ts: at(16, 21) });
+  const bound = store.createThread({ title: '藏品聊天', origin: 'item', itemId: other.id });
+  store.appendThreadMessage(bound.id, { id: 'bound-1', role: 'assistant', content: '当时聊的是绑定的藏品。', ts: at(15, 20) });
+
+  const toolNames = ['get_collection_counts', 'list_recent_items', 'read_character', 'list_collection'];
+  const toolCalls = toolNames.map((name) => ({
+    id: name, type: 'function', function: { name, arguments: '{}' },
+  }));
+  let rounds = 0;
+  const fetch = t.mock.method(globalThis, 'fetch', async () => ++rounds === 1
+    ? Response.json({ choices: [{ message: { tool_calls: toolCalls }, finish_reason: 'tool_calls' }] })
+    : reply());
+  const done = Promise.withResolvers();
+  const service = new RitualService({
+    store,
+    sendEvent: (event) => {
+      if (event.type === 'chat:done') done.resolve(event);
+      if (event.type === 'chat:error') done.reject(new Error(event.message));
+    },
+  });
+  const intro = await service.itemIntro({ itemId: focus.id });
+  assert.equal((await done.promise).threadId, intro.threadId);
+
+  const [first, second] = fetch.mock.calls.map(({ arguments: [, options] }) => JSON.parse(options.body));
+  const firstContext = first.messages.map(({ content }) => content).join('\n');
+  assert.equal(firstContext.match(/当前手办详情/g)?.length, 1);
+  assert.doesNotMatch(firstContext, /无关藏品|同角色挂件|旧上贡摘要|仅查询才返回的角色背景/);
+  for (const name of toolNames) assert.ok(first.tools.some((tool) => tool.function.name === name), name);
+  assert.equal(fetch.mock.callCount(), 2);
+
+  const results = Object.fromEntries(second.messages.filter(({ role }) => role === 'tool')
+    .map(({ tool_call_id, content }) => [tool_call_id, JSON.parse(content)]));
+  assert.deepEqual(results.get_collection_counts, { owned: 1, pending: 1, watching: 1, total: 3 });
+  assert.deepEqual(results.list_recent_items.items, [
+    { id: other.id, name: other.name, kind: 'freechat', date: '2026-11-15' },
+    { id: related.id, name: related.name, kind: 'freechat', date: '2026-11-14' },
+  ]);
+  const profile = results.read_character;
+  assert.equal(profile.characterId, character.id);
+  assert.equal(profile.currentItemId, focus.id);
+  assert.deepEqual(profile.items.map(({ id }) => id).sort(), [focus.id, related.id].sort());
+  assert.deepEqual(profile.history.map(({ sessionId, kind }) => [sessionId, kind]), [
+    [manual.id, 'freechat'], ['ritual-memory', 'ritual'],
+  ]);
+  assert.match(service.executeTool('read_memory', { session_id: manual.id }).transcript, /聊聊同角色挂件/);
+  assert.equal(service.executeTool('read_character', { character_name: '测试角色' }).characterId, character.id);
+  assert.equal(results.list_collection.total, 3);
+});

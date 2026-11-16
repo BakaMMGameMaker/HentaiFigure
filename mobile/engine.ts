@@ -21,7 +21,10 @@ import { PROMPT_DEFAULTS, renderPrompt } from '../src/prompts';
 import { chatMessageContent, validateChatImages } from '../electron/lib/chat-attachments.mjs';
 import { FreeChatLog } from '../electron/lib/free-chat-log.mjs';
 import { VIEW_ITEM_PHOTOS, createPhotoAccess } from '../electron/lib/chat-photos.mjs';
-import { LIST_COLLECTION, MEMORY_LOOKUP_TOOLS, collectionPage, readMemory, searchMemory } from '../electron/lib/chat-memory.mjs';
+import {
+  FREE_CHAT_COLLECTION_TOOLS, LIST_COLLECTION, MEMORY_LOOKUP_TOOLS, READ_CHARACTER,
+  collectionPage, listRecentItems, readCharacter, readMemory, searchMemory,
+} from '../electron/lib/chat-memory.mjs';
 import { assertVisionReady, isVisionReady } from '../electron/lib/vision-config.mjs';
 import { dailyChatScheduleChanged, isDailyChatDue } from '../electron/lib/daily-chat-schedule.mjs';
 
@@ -70,15 +73,9 @@ const MEMORY_TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'read_character',
-      description: '读取某个角色档案的完整设定，以及关联在这个角色名下的所有周边和上贡记录。参数是 list_characters 或 read_item 返回的 characterId。',
-      parameters: { type: 'object', properties: { character_id: { type: 'string' } }, required: ['character_id'] },
-    },
-  },
+  READ_CHARACTER,
 ];
+const FREE_CHAT_TOOLS = [...MEMORY_TOOLS, ...FREE_CHAT_COLLECTION_TOOLS];
 
 function truncate(text: unknown, max: number): string {
   const str = String(text || '');
@@ -488,9 +485,13 @@ export class MobileEngine {
   }
 
   // ---------- tool loop ----------
-  executeTool(name: string, args: any): any {
+  executeTool(name: string, args: any, currentItem?: Item | null, currentThreadId?: string): any {
+    if (name === 'get_collection_counts') return this.counts();
     const sessions = this.store.listSessions();
     const items = this.store.listItems();
+    if (name === 'list_recent_items') {
+      return listRecentItems({ items, sessions, threads: this.store.sortedThreads(), args, dateKey: dayKey });
+    }
     if (name === 'search_memory' || name === 'read_memory') {
       const context = {
         getItemName: (itemId?: string | null) => itemId ? this.store.getItem(itemId)?.name : undefined,
@@ -588,22 +589,18 @@ export class MobileEngine {
       };
     }
     if (name === 'read_character') {
-      const character = this.store.getCharacter(args.character_id);
-      if (!character) return { error: '没有这个角色档案' };
-      const related = items.filter((i) => i.characterId === character.id);
-      const events = sessions
-        .filter((s) => s.archived && related.some((i) => i.id === s.itemId))
-        .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
-        .slice(0, 12)
-        .map((s) => ({ sessionId: s.id, date: s.day, phase: PHASE_META[s.phase]?.label || s.phase, itemName: s.itemName, summary: truncate(s.summary, 220) }));
-      return {
-        characterId: character.id,
-        name: character.name,
-        source: character.source,
-        description: character.description,
-        items: related.map((i) => ({ id: i.id, name: i.name, type: TYPE_LABELS[i.type] || i.type, status: i.status, detail: truncate(i.detail, 300), thought: truncate(i.thought, 300) })),
-        history: events,
-      };
+      return readCharacter({
+        characters: this.store.listCharacters(),
+        items,
+        sessions,
+        threads: this.store.sortedThreads(),
+        currentItem,
+        currentThreadId,
+        args,
+        dateKey: dayKey,
+        phaseLabel: (phase) => PHASE_META[phase]?.label || phase,
+        typeLabel: (type) => TYPE_LABELS[type] || type,
+      });
     }
     return { error: `未知工具 ${name}` };
   }
@@ -665,7 +662,7 @@ export class MobileEngine {
             let photoResult;
             try {
               if (tc.function.name === VIEW_ITEM_PHOTOS.function.name) photoResult = photoAccess?.view(args);
-              toolResult = photoResult?.result ?? this.executeTool(tc.function.name, args);
+              toolResult = photoResult?.result ?? this.executeTool(tc.function.name, args, item);
             } catch (err: any) {
               toolResult = { error: err?.message || '工具执行失败' };
             }
@@ -675,7 +672,7 @@ export class MobileEngine {
             working.push({
               role: 'tool',
               tool_call_id: tc.id,
-              content: photoResult?.content ?? (tc.function.name === 'read_item' ? text : truncate(text, 12000)),
+              content: photoResult?.content ?? (['read_item', 'read_character'].includes(tc.function.name) ? text : truncate(text, 12000)),
             });
           }
           const images = photoAccess?.takeImageMessage();
@@ -907,67 +904,17 @@ export class MobileEngine {
     return lines.join('\n');
   }
 
-  collectionDigest() {
-    const items = this.store.listItems();
-    const counts = this.counts();
-    const lines = [`已拥有 ${counts.owned} 件，待补款 ${counts.pending} 件，观望中 ${counts.watching} 件。`];
-    if (!items.length) {
-      lines.push('收藏室目前是空的。');
-      return lines.join('\n');
-    }
-    for (const item of items.slice(0, 12)) {
-      const status = item.status === 'owned' ? '已拥有' : item.status === 'pending' ? '待补款' : '观望中';
-      const price = item.status === 'pending' ? `尾款 ${money(item.balance)}${item.dueDate ? `，补款 ${formatDateCN(item.dueDate)}` : ''}` : `价格 ${money(item.purchasePrice ?? item.originalPrice)}`;
-      const character = this.characterFor(item);
-      lines.push(`- ${item.name}（${TYPE_LABELS[item.type] || '周边'}${character ? `，角色 ${character.name}` : ''}，${status}，${price}）`);
-    }
-    for (const item of items.filter((i) => i.detail || i.thought).slice(0, 3)) {
-      if (item.detail) lines.push(`· ${item.name} 的商品详情：${truncate(item.detail, 160)}`);
-      if (item.thought) lines.push(`· ${item.name} 的最初想法：${truncate(item.thought, 160)}`);
-    }
-    return lines.join('\n');
-  }
-
-  characterDigest() {
-    const characters = this.store.listCharacters();
-    if (!characters.length) return '';
-    const items = this.store.listItems();
-    const lines = characters.slice(0, 16).map((character) => {
-      const related = items.filter((i) => i.characterId === character.id);
-      const bits = [`- ${character.name}`];
-      if (character.source) bits.push(`出自《${character.source}》`);
-      bits.push(related.length ? `收藏室里 ${related.length} 款周边` : '还没有关联的周边');
-      if (character.description) bits.push(truncate(character.description.replace(/\s+/g, ' '), 180));
-      return bits.join('，');
-    });
-    if (characters.length > 16) lines.push(`- ……还有 ${characters.length - 16} 个角色档案。`);
-    return lines.join('\n');
-  }
-
   buildFreeChatSystemPrompt(thread?: ChatThread | null) {
     const name = this.userName();
     const parts: string[] = [];
     this.pushPart(parts, this.prompt('persona', { name }));
     this.pushPart(parts, this.prompt('freechat.scene', { date: formatDateCN(this.today()), name }));
-    this.pushPart(parts, this.prompt('freechat.collectionBlock', { digest: this.collectionDigest(), name }));
-    const characterDigest = this.characterDigest();
-    if (characterDigest) {
-      this.pushPart(parts, this.prompt('freechat.characterBlock', { digest: characterDigest, name }));
-    }
     if (thread?.itemId) {
       const item = this.store.getItem(thread.itemId);
       if (item) {
         this.pushPart(parts, this.prompt('freechat.itemBlock', { context: this.itemContext(item), name }));
-        const character = this.characterFor(item);
-        if (character) {
-          this.pushPart(parts, this.prompt('ritual.characterBlock', { context: this.characterContext(character), name }));
-        }
       }
     }
-    this.pushPart(parts, this.prompt('freechat.memoryBlock', {
-      digest: this.memoryDigest(thread?.itemId || null, null),
-      name,
-    }));
     this.pushPart(parts, this.prompt('freechat.tools', { name }));
     this.pushPart(parts, this.prompt('freechat.output', { name }));
     return parts.join('\n\n');
@@ -1055,7 +1002,7 @@ export class MobileEngine {
       const item = thread.itemId ? this.store.getItem(thread.itemId) : null;
       const photoAccess = this.photoAccess(item, thread.messages);
       const working = this.buildFreeChatMessages(thread, openingInstruction, photoAccess);
-      const tools = photoAccess ? [...MEMORY_TOOLS, VIEW_ITEM_PHOTOS] : MEMORY_TOOLS;
+      const tools = photoAccess ? [...FREE_CHAT_TOOLS, VIEW_ITEM_PHOTOS] : FREE_CHAT_TOOLS;
       for (let round = 0; round < 4; round += 1) {
         const logged: { round?: FreeChatLogRound } = {};
         const result = await requestChat({
@@ -1082,7 +1029,7 @@ export class MobileEngine {
             let photoResult;
             try {
               if (tc.function.name === VIEW_ITEM_PHOTOS.function.name) photoResult = photoAccess?.view(args);
-              toolResult = photoResult?.result ?? this.executeTool(tc.function.name, args);
+              toolResult = photoResult?.result ?? this.executeTool(tc.function.name, args, item, thread.id);
             } catch (err: any) {
               toolResult = { error: err?.message || '工具执行失败' };
             }
@@ -1093,7 +1040,7 @@ export class MobileEngine {
             working.push({
               role: 'tool',
               tool_call_id: tc.id,
-              content: photoResult?.content ?? (tc.function.name === 'read_item' ? text : truncate(text, 12000)),
+              content: photoResult?.content ?? (['read_item', 'read_character'].includes(tc.function.name) ? text : truncate(text, 12000)),
             });
           }
           const images = photoAccess?.takeImageMessage();
@@ -1153,10 +1100,6 @@ export class MobileEngine {
     const title = `${titleBase} · ${item.name}`.slice(0, 40);
     const thread = await this.store.createThread({ title, origin: 'item', itemId: item.id });
     const context = this.itemContext(item);
-    const character = this.characterFor(item);
-    const characterBlock = character
-      ? this.prompt('ritual.characterBlock', { context: this.characterContext(character), name })
-      : '';
     let instruction: string;
     if (mode === 'update') {
       const list = (Array.isArray(changes) ? changes : [])
@@ -1179,7 +1122,6 @@ export class MobileEngine {
         context,
       });
     }
-    if (characterBlock.trim()) instruction = `${instruction}\n\n${characterBlock}`;
     this.generateFreeChat({ openingInstruction: instruction, threadId: thread.id, proactive: true }).catch(() => {});
     return { threadId: thread.id, started: true };
   }
