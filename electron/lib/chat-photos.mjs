@@ -1,4 +1,5 @@
 import { isDeepSeekEndpoint } from './vision-config.mjs';
+import { shotLabel, sortPhotos } from './photo-catalog.mjs';
 
 export const VIEW_ITEM_PHOTOS = {
   type: 'function',
@@ -15,7 +16,7 @@ export const VIEW_ITEM_PHOTOS = {
   },
 };
 
-export function createPhotoAccess({ photos, history, labels, config, loadImage }) {
+export function createPhotoAccess({ photos, history, config, loadImage }) {
   if (!Array.isArray(photos)) return null;
   const catalog = new Map(photos.filter((photo) => photo?.id && photo.file).map((photo) => [photo.id, photo]));
   if (!catalog.size) return null;
@@ -25,15 +26,15 @@ export function createPhotoAccess({ photos, history, labels, config, loadImage }
   const supplementalParts = [];
   const nativeToolImages = isDeepSeekEndpoint(config.baseUrl);
   const detail = config.imageDetail === 'low' ? 'low' : 'high';
-  const describe = (photo) => `${labels[photo.shot] || '照片'}${photo.caption ? `（${photo.caption}）` : ''}`;
-  const names = [...catalog.values()].map((photo) =>
-    `${photo.id}：${describe(photo)}${previousIds.has(photo.id) ? '（本对话此前已查看）' : ''}`).join('\n');
+  const describe = (photo) => `${shotLabel(photo.shot)}${photo.caption ? `（${photo.caption}）` : ''}`;
+  const names = sortPhotos([...catalog.values()]).map((photo) =>
+    `${photo.id}：${describe(photo)}${previousIds.has(photo.id) ? '［本对话此前已查看］' : ''}`).join('\n');
 
   return {
     names,
     count: catalog.size,
     viewedIds,
-    instructions: `【当前藏品的照片清单】\n${names}\n按话题使用 view_item_photos 点选，涉及外观细节时先查看对应的图。已查看的标记表示过去收到过图片，想核实画面时可以重看。`,
+    instructions: `【当前藏品的照片清单】（括号内为用户的图片备注）\n${names}\n按话题使用 view_item_photos 点选，涉及外观细节时先查看对应的图。已查看的标记表示过去收到过图片，想核实画面时可以重看。`,
     view(args) {
       if (!Array.isArray(args?.photo_ids) || !args.photo_ids.length) {
         return { result: { error: '请提供清单中的 photo_ids。' } };

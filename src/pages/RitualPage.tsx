@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, Config, Phase, RitualState } from '../types';
 import {
-  PHASES, PHASE_META, formatDateCN, formatMoney, photoUrl, shotLabel, statusLabel, typeLabel,
+  PHASES, PHASE_META, formatDateCN, formatMoney, photoUrl, shotLabel, sortPhotos, statusLabel, typeLabel,
 } from '../constants';
 import { cleanError, cx } from '../utils';
 import { ManagerAvatar, Modal, PhotoLightbox, Spinner, TypingDots, confirmDialog } from '../components/ui';
@@ -92,7 +92,7 @@ export function RitualPage({
 
   const activeSessionId = state.session?.id || null;
   const day = state.day;
-  const photos = state.item?.photos || [];
+  const photos = sortPhotos(state.item?.photos || []);
   const mainPhoto = photos[photoIndex] || photos[0];
   const isComplete = state.status === 'complete';
   const lastMessage = messages[messages.length - 1];

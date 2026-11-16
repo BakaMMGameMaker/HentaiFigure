@@ -2,7 +2,7 @@ import type {
   Character, ChatMessage, ChatThread, FreeChatLogRound, FreeChatState, Item, Phase, RitualState, Session,
 } from '../src/types';
 import {
-  PHASE_META, PHASES, SHOT_OPTIONS, TYPE_OPTIONS, formatDateCN,
+  PHASE_META, PHASES, TYPE_OPTIONS, formatDateCN, shotLabel, sortPhotos,
 } from '../src/constants';
 
 // localDateKey is not exported from constants; keep a local helper.
@@ -34,7 +34,6 @@ const PHASE_PROMPT_KEY: Record<Phase, string> = {
   instigate: 'ritual.phaseInstigate',
 };
 
-const SHOT_LABELS: Record<string, string> = Object.fromEntries(SHOT_OPTIONS.map((s) => [s.value, s.label]));
 const TYPE_LABELS: Record<string, string> = Object.fromEntries(TYPE_OPTIONS.map((t) => [t.value, t.label]));
 
 const MEMORY_TOOLS = [
@@ -390,7 +389,6 @@ export class MobileEngine {
     return createPhotoAccess({
       photos: item?.photos || [],
       history,
-      labels: SHOT_LABELS,
       config: this.store.config,
       loadImage: (photo) => /^data:image\//.test(photo.file) ? photo.file : null,
     });
@@ -542,8 +540,8 @@ export class MobileEngine {
           dueDate: item.dueDate,
           detail: item.detail,
           thought: item.thought,
-          photos: (item.photos || []).map((photo) => ({
-            label: SHOT_LABELS[photo.shot] || '照片',
+          photos: sortPhotos(item.photos || []).map((photo) => ({
+            label: shotLabel(photo.shot),
             caption: photo.caption,
           })),
         },

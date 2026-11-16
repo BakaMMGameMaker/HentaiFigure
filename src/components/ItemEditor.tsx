@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import type { Character, Item, ItemChange, ItemStatus, ItemType, Photo, Shot } from '../types';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { Character, Item, ItemChange, ItemStatus, ItemType, Photo } from '../types';
 import {
-  SHOT_OPTIONS, STATUS_META, TYPE_OPTIONS, formatMoney, photoUrl, shotLabel,
+  STATUS_META, TYPE_OPTIONS, formatMoney, photoUrl, shotLabel, sortPhotos,
 } from '../constants';
 import { cleanError, cx, describeItemChanges, toNumberOrNull } from '../utils';
-import { Modal, PhotoLightbox, SheetHeader, Spinner, confirmDialog } from './ui';
+import { Modal, SheetHeader, Spinner, confirmDialog } from './ui';
+import { PhotoEditor } from './PhotoEditor';
 import {
-  IconAlert, IconCamera, IconCheck, IconChevronDown, IconChevronUp, IconPlus, IconSearch, IconTrash, IconUpload,
+  IconCamera, IconCheck, IconChevronDown, IconChevronUp, IconPlus, IconSearch, IconTrash, IconUpload,
 } from '../icons';
 
 type SaveAction = 'save' | 'notify' | 'reintroduce';
@@ -91,10 +92,8 @@ export function ItemEditor({
   const [photos, setPhotos] = useState<Photo[]>(item?.photos || []);
   const [saving, setSaving] = useState(false);
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
-  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [photoDialog, setPhotoDialog] = useState<{ startIndex: number | null } | null>(null);
   const [error, setError] = useState('');
-  const [dragOver, setDragOver] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [confirmingPhoto, setConfirmingPhoto] = useState(false);
   const [localCharacters, setLocalCharacters] = useState<Character[]>(characters || []);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -106,10 +105,12 @@ export function ItemEditor({
   const characterTriggerRef = useRef<HTMLButtonElement>(null);
   const characterReturnFocus = useRef<HTMLButtonElement>(null);
   const photoReturnFocus = useRef<HTMLButtonElement>(null);
+  const photoUploadRef = useRef<HTMLButtonElement>(null);
   const saveGroupRef = useRef<HTMLDivElement>(null);
   const saveToggleRef = useRef<HTMLButtonElement>(null);
   const characterDialogOpen = characterForm !== null;
-  const busy = saving || uploading || characterBusy || confirmingPhoto;
+  const photoDialogOpen = photoDialog !== null;
+  const busy = saving || characterBusy || confirmingPhoto;
   const close = () => { if (!busy) onClose(); };
 
   useEffect(() => { setLocalCharacters(characters || []); }, [characters]);
@@ -123,11 +124,12 @@ export function ItemEditor({
     }
   }, [characterDialogOpen]);
   useEffect(() => {
-    if (previewIndex === null) {
-      photoReturnFocus.current?.focus({ preventScroll: true });
+    if (!photoDialogOpen && photoReturnFocus.current) {
+      const opener = photoReturnFocus.current;
+      (opener.isConnected ? opener : photoUploadRef.current)?.focus({ preventScroll: true });
       photoReturnFocus.current = null;
     }
-  }, [previewIndex]);
+  }, [photoDialogOpen]);
   useEffect(() => {
     if (!saveMenuOpen) return;
     const onPointerDown = (event: PointerEvent) => {
@@ -148,6 +150,7 @@ export function ItemEditor({
     setForm((prev) => ({ ...prev, [key]: value }));
 
   const selectedCharacter = localCharacters.find((c) => c.id === form.characterId) || null;
+  const sortedPhotos = sortPhotos(photos);
   const hasFull = photos.some((p) => p.shot === 'full');
   const needsFull = form.status === 'owned' && form.type === 'figure' && !hasFull;
   const tailPreview = (() => {
@@ -216,54 +219,11 @@ export function ItemEditor({
     }
   };
 
-  const groupPhotos = (added: Photo[]) => {
-    if (!added.length) return added;
-    if (form.status === 'owned' && form.type === 'figure' && !hasFull) {
-      return added.map((p, index) => (index === 0 ? { ...p, shot: 'full' as Shot } : p));
-    }
-    return added;
-  };
-
-  const addViaDialog = async () => {
+  const openPhotoDialog = (opener: HTMLButtonElement, startIndex: number | null) => {
     if (busy) return;
-    setUploading(true);
     setError('');
-    try {
-      const added = await window.hf.photos.add(draftId);
-      if (added.length) setPhotos((prev) => [...prev, ...groupPhotos(added)]);
-    } catch (err) {
-      setError(cleanError(err));
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const onDrop = async (event: DragEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    setDragOver(false);
-    if (busy) return;
-    const files = Array.from(event.dataTransfer.files || []);
-    if (!files.length) return;
-    const paths = files.map((file) => window.hf.photos.pathForFile(file)).filter(Boolean);
-    if (!paths.length) {
-      setError('拖进来的文件读不到路径，换用「上传照片」试试。');
-      return;
-    }
-    setUploading(true);
-    setError('');
-    try {
-      const added = await window.hf.photos.addPaths(draftId, paths);
-      if (added.length) setPhotos((prev) => [...prev, ...groupPhotos(added)]);
-      else toast('这些文件不是支持的图片格式', 'error');
-    } catch (err) {
-      setError(cleanError(err));
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const updatePhoto = (id: string, patch: Partial<Photo>) => {
-    setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    photoReturnFocus.current = opener;
+    setPhotoDialog({ startIndex });
   };
 
   const removePhoto = async (photo: Photo) => {
@@ -348,7 +308,7 @@ export function ItemEditor({
       closeOnBackdrop={false}
       className="editor-sheet"
       titleId="item-editor-title"
-      inert={characterDialogOpen || previewIndex !== null}
+      inert={characterDialogOpen || photoDialogOpen}
     >
       <SheetHeader
         eyebrow={isNew ? 'NEW FIGURE' : 'EDIT FIGURE'}
@@ -600,79 +560,41 @@ export function ItemEditor({
               <span className={cx('pill', needsFull && 'pill-warn')}>{photos.length} 张</span>
             </div>
 
-            {needsFull && (
-              <div className="inline-alert">
-                <IconAlert size={15} />
-                请上传或标记一张全身照。
-              </div>
-            )}
-
             <button
               type="button"
-              className={cx('dropzone', dragOver && 'drag-over', uploading && 'is-uploading')}
-              onDragOver={(e) => { e.preventDefault(); if (!busy) setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => void onDrop(e)}
-              onClick={() => void addViaDialog()}
+              className="btn btn-soft photo-upload"
+              ref={photoUploadRef}
+              aria-haspopup="dialog"
+              onClick={(event) => openPhotoDialog(event.currentTarget, null)}
               disabled={busy}
             >
-              {uploading ? <Spinner /> : <IconUpload size={20} />}
-              <span>
-                <strong>{uploading ? '正在收下照片…' : '上传照片'}</strong>
-                <small>{isAndroid ? '点击从相册选择照片' : '点击选择，或把图片拖进来'}</small>
-              </span>
-              <IconCamera size={18} className="dropzone-cam" />
+              <IconUpload size={16} /> 上传照片
             </button>
           </div>
 
           <div className="photo-list">
-            {photos.map((photo, index) => (
-              <div className="photo-card" key={photo.id}>
-                <div className="photo-thumb">
-                  <button
-                    type="button"
-                    className="photo-preview"
-                    disabled={busy}
-                    aria-label={`查看第 ${index + 1} 张大图 · ${photo.caption || shotLabel(photo.shot)}`}
-                    onClick={(event) => {
-                      photoReturnFocus.current = event.currentTarget;
-                      setPreviewIndex(index);
-                    }}
-                  >
-                    <img src={photoUrl(photo.thumbFile, true, photo.file)} alt="" loading="lazy" />
-                  </button>
-                  <span className="photo-index">{String(index + 1).padStart(2, '0')}</span>
-                  {photo.shot === 'full' && <span className="photo-full">全身</span>}
-                  <button
-                    type="button"
-                    className="photo-del"
-                    disabled={busy}
-                    onClick={() => void removePhoto(photo)}
-                    title="删除这张"
-                    aria-label="删除这张"
-                  >
-                    <IconTrash size={13} />
-                  </button>
-                </div>
-                <div className="photo-meta">
-                  <select
-                    value={photo.shot}
-                    onChange={(e) => updatePhoto(photo.id, { shot: e.target.value as Shot })}
-                    className="select select-sm"
-                    aria-label={`第 ${index + 1} 张照片的标签`}
-                  >
-                    {SHOT_OPTIONS.filter((o) => o.value !== 'other' || photo.shot === 'other').map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                  <input
-                    className="input input-sm"
-                    value={photo.caption || ''}
-                    onChange={(e) => updatePhoto(photo.id, { caption: e.target.value })}
-                    placeholder="备注，比如「开箱实拍」"
-                    maxLength={60}
-                  />
-                </div>
+            {sortedPhotos.map((photo, index) => (
+              <div className="photo-thumb" key={photo.id}>
+                <button
+                  type="button"
+                  className="photo-preview"
+                  disabled={busy}
+                  aria-haspopup="dialog"
+                  aria-label={`编辑第 ${index + 1} 张照片 · ${photo.caption || shotLabel(photo.shot)}`}
+                  onClick={(event) => openPhotoDialog(event.currentTarget, index)}
+                >
+                  <img src={photoUrl(photo.thumbFile, true, photo.file)} alt="" loading="lazy" />
+                </button>
+                <button
+                  type="button"
+                  className="photo-del"
+                  disabled={busy}
+                  onClick={() => void removePhoto(photo)}
+                  title="删除这张"
+                  aria-label={`删除第 ${index + 1} 张照片`}
+                >
+                  <IconTrash size={13} />
+                </button>
               </div>
             ))}
           </div>
@@ -680,7 +602,7 @@ export function ItemEditor({
           {photos.length === 0 && (
             <div className="photo-empty">
               <IconCamera size={24} />
-              <span>还没有照片。她需要至少一张，才能被看见。</span>
+              <span>还没有照片</span>
             </div>
           )}
         </aside>
@@ -701,7 +623,7 @@ export function ItemEditor({
               type="button"
               className="btn btn-primary editor-save-main"
               onClick={() => void submit('notify')}
-              disabled={busy}
+              disabled={busy || !photos.length}
               aria-label="保存并告知管理员"
               title="保存并告知管理员"
             >
@@ -713,7 +635,7 @@ export function ItemEditor({
               className="btn btn-primary editor-save-toggle"
               ref={saveToggleRef}
               onClick={() => setSaveMenuOpen((open) => !open)}
-              disabled={busy}
+              disabled={busy || !photos.length}
               aria-label="更多保存选项"
               aria-expanded={saveMenuOpen}
               aria-controls={saveMenuOpen ? 'item-save-options' : undefined}
@@ -732,8 +654,19 @@ export function ItemEditor({
         </div>
       </footer>
 
-      {previewIndex !== null && (
-        <PhotoLightbox photos={photos} startIndex={previewIndex} onClose={() => setPreviewIndex(null)} />
+      {photoDialog && (
+        <PhotoEditor
+          itemId={draftId}
+          photos={photos}
+          startIndex={photoDialog.startIndex}
+          defaultToFull={needsFull}
+          isAndroid={isAndroid}
+          onClose={() => setPhotoDialog(null)}
+          onSave={(next) => {
+            setPhotos(next);
+            setPhotoDialog(null);
+          }}
+        />
       )}
 
       {characterForm && (

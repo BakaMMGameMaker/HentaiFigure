@@ -6,6 +6,7 @@ const promptLib = require('./prompts.cjs');
 const { chatMessageContent, validateChatImages } = require('./chat-attachments.mjs');
 const { FreeChatLog } = require('./free-chat-log.mjs');
 const { VIEW_ITEM_PHOTOS, createPhotoAccess } = require('./chat-photos.mjs');
+const { shotLabel, sortPhotos } = require('./photo-catalog.mjs');
 const {
   FREE_CHAT_COLLECTION_TOOLS, LIST_COLLECTION, MEMORY_LOOKUP_TOOLS, READ_CHARACTER,
   collectionPage, listRecentItems, readCharacter, readMemory, searchMemory,
@@ -38,23 +39,6 @@ const PHASE_META = {
     finishLabel: '结束本轮',
     promptKey: 'ritual.phaseInstigate',
   },
-};
-
-const SHOT_LABELS = {
-  promo: '宣传图',
-  real: '实物图',
-  full: '全身照',
-  face: '脸蛋',
-  armpit: '腋下',
-  chest: '胸部',
-  back: '美背',
-  belly: '肚子',
-  private: '私处',
-  butt: '屁股',
-  underSkirt: '裙底',
-  thigh: '大腿',
-  feet: '玉足',
-  other: '其他',
 };
 
 const TYPE_LABELS = {
@@ -518,7 +502,6 @@ class RitualService {
     return createPhotoAccess({
       photos: item?.photos || [],
       history,
-      labels: SHOT_LABELS,
       config: this.store.config,
       loadImage: (photo) => {
         const abs = this.store.absImagePath(photo.file);
@@ -1235,8 +1218,8 @@ class RitualService {
           dueDate: item.dueDate,
           detail: item.detail,
           thought: item.thought,
-          photos: (item.photos || []).map((photo) => ({
-            label: SHOT_LABELS[photo.shot] || '照片',
+          photos: sortPhotos(item.photos || []).map((photo) => ({
+            label: shotLabel(photo.shot),
             caption: photo.caption,
           })),
           createdAt: item.createdAt,
@@ -1494,7 +1477,6 @@ module.exports = {
   RitualService,
   PHASES,
   PHASE_META,
-  SHOT_LABELS,
   TYPE_LABELS,
   localDateKey,
   dateLabel,

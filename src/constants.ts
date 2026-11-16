@@ -1,4 +1,5 @@
-import type { Item, ItemStatus, ItemType, Phase, Shot } from './types';
+import type { Item, ItemStatus, ItemType, Phase } from './types';
+export { SHOT_OPTIONS, shotLabel, sortPhotos } from '../electron/lib/photo-catalog.mjs';
 
 export const STATUS_META: Record<ItemStatus, { label: string; desc: string; short: string; glyph: string }> = {
   owned: { label: '已拥有', desc: '在柜子里，等她落灰，也等你擦拭', short: '拥有', glyph: '所' },
@@ -17,23 +18,6 @@ export const TYPE_OPTIONS: { value: ItemType; label: string }[] = [
   { value: 'other', label: '其他周边' },
 ];
 
-export const SHOT_OPTIONS: { value: Shot; label: string }[] = [
-  { value: 'promo', label: '宣传图' },
-  { value: 'real', label: '实物图' },
-  { value: 'full', label: '全身照' },
-  { value: 'face', label: '脸蛋' },
-  { value: 'armpit', label: '腋下' },
-  { value: 'chest', label: '胸部' },
-  { value: 'back', label: '美背' },
-  { value: 'belly', label: '肚子' },
-  { value: 'private', label: '私处' },
-  { value: 'butt', label: '屁股' },
-  { value: 'underSkirt', label: '裙底' },
-  { value: 'thigh', label: '大腿' },
-  { value: 'feet', label: '玉足' },
-  { value: 'other', label: '其他' },
-];
-
 export const PHASE_META: Record<Phase, { label: string; key: string; desc: string; finish: string }> = {
   wipe: { label: '擦拭', key: 'wipe', desc: '给柜子里的她擦去灰尘，一边擦一边说骚话', finish: '擦拭完毕' },
   fantasy: { label: '意淫', key: 'fantasy', desc: '对着还在补款路上的她，先想个够', finish: '意淫完毕' },
@@ -44,10 +28,6 @@ export const PHASES: Phase[] = ['wipe', 'fantasy', 'instigate'];
 
 export function typeLabel(type: string | undefined): string {
   return TYPE_OPTIONS.find((t) => t.value === type)?.label || '周边';
-}
-
-export function shotLabel(shot: string | undefined): string {
-  return SHOT_OPTIONS.find((s) => s.value === shot)?.label || '照片';
 }
 
 export function statusLabel(status: string | undefined): string {

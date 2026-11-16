@@ -1,7 +1,7 @@
 {
   "name": "hentaifigure",
   "productName": "HentaiFigure",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "HentaiFigure — 私人的手办收藏室与今日份上贡",
   "main": "electron/main.cjs",
   "author": "HentaiFigure",

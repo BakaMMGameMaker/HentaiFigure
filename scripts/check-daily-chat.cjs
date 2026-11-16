@@ -94,7 +94,11 @@ test('藏品开场只发送当前藏品资料，收藏室和相关记忆按工�
   const character = store.upsertCharacter({ name: '测试角色（全名）', description: '仅查询才返回的角色背景' });
   const focus = store.upsertItem({
     id: 'focus', name: '当前手办', characterId: character.id, type: 'figure', status: 'owned', detail: '当前手办详情',
-    photos: [{ id: 'ph_focus', file: 'focus.jpg', shot: 'full', caption: '正面展示' }],
+    photos: [
+      { id: 'ph_promo_later', file: 'promo-later.jpg', shot: 'promo', createdAt: 30 },
+      { id: 'ph_focus', file: 'focus.jpg', shot: 'full', caption: '正面展示', createdAt: 10 },
+      { id: 'ph_promo_earlier', file: 'promo-earlier.jpg', shot: 'promo', createdAt: 20 },
+    ],
   });
   const related = store.upsertItem({
     id: 'related', name: '同角色挂件', characterId: character.id, type: 'other', status: 'pending', photos: [],
@@ -138,7 +142,12 @@ test('藏品开场只发送当前藏品资料，收藏室和相关记忆按工�
   const [first, second] = fetch.mock.calls.map(({ arguments: [, options] }) => JSON.parse(options.body));
   const firstContext = first.messages.map(({ content }) => content).join('\n');
   assert.equal(firstContext.match(/当前手办详情/g)?.length, 1);
-  assert.match(first.messages[0].content, /【当前藏品的照片清单】\nph_focus：全身照（正面展示）/);
+  assert.ok(first.messages[0].content.includes([
+    '【当前藏品的照片清单】（括号内为用户的图片备注）',
+    'ph_promo_earlier：宣传图',
+    'ph_promo_later：宣传图',
+    'ph_focus：全身照（正面展示）',
+  ].join('\n')));
   assert.equal(firstContext.match(/正面展示/g)?.length, 1);
   assert.doesNotMatch(firstContext, /照片共 \d+ 张/);
   assert.ok(first.tools.some((tool) => tool.function.name === 'view_item_photos'));

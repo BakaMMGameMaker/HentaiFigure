@@ -10,13 +10,14 @@ import { MobileEngine } from './engine';
 import { exportSyncZip, importSyncZip } from './sync';
 import { friendlyError, testConnection } from './ai';
 import { connectionTestInput, verifyVisionSettings } from '../electron/lib/vision-config.mjs';
+import { SHOT_LABELS } from '../electron/lib/photo-catalog.mjs';
 import appConfig from '../app-config.json';
 
 // 版本号由 vite.mobile.config.ts 从 package.json 注入，避免手改漏改。
 declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0';
 const ALLOWED_STATUS = new Set(['owned', 'pending', 'watching']);
-const ALLOWED_SHOTS = new Set(['promo', 'real', 'full', 'face', 'armpit', 'chest', 'back', 'belly', 'private', 'butt', 'underSkirt', 'thigh', 'feet', 'other']);
+const ALLOWED_SHOTS = new Set(Object.keys(SHOT_LABELS));
 const ALLOWED_TYPES = new Set(['figure', 'acrylic', 'pillow', 'poster', 'badge', 'itabag', 'plush', 'other']);
 
 function compareVersions(a: string, b: string): number {
@@ -144,6 +145,15 @@ async function fileToPhoto(file: File, store: MobileStore): Promise<Photo> {
     height: img.naturalHeight || img.height,
     createdAt: Date.now(),
   };
+}
+
+async function importPhotoFiles(files: File[], store: MobileStore): Promise<Photo[]> {
+  const photos: Photo[] = [];
+  for (const file of files.slice(0, 40)) {
+    try { photos.push(await fileToPhoto(file, store)); } catch (err) { console.warn(err); }
+  }
+  if (files.length && !photos.length) throw new Error('没有可用的图片，请选择支持的图片格式（单张最多 60MB）。');
+  return photos;
 }
 
 function pickFiles(accept: string, multiple: boolean): Promise<File[]> {
@@ -416,15 +426,12 @@ export function installMobileApi() {
       discardDraft: async () => true,
     },
     photos: {
-      add: async (itemId: string) => {
+      add: async (_itemId: string, multiple = true) => {
         await ready;
-        const files = await pickFiles('image/*', true);
-        const out: Photo[] = [];
-        for (const file of files.slice(0, 40)) {
-          try { out.push(await fileToPhoto(file, store)); } catch (err) { console.warn(err); }
-        }
-        return out;
+        const files = await pickFiles('image/*', multiple);
+        return importPhotoFiles(files, store);
       },
+      addFiles: async (files) => { await ready; return importPhotoFiles(files, store); },
       addPaths: async () => [],
       pathForFile: () => '',
     },

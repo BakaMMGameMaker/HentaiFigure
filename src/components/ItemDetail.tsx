@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Character, Item } from '../types';
 import {
-  formatDateCN, formatMoney, photoUrl, shotLabel, statusLabel, typeLabel,
+  formatDateCN, formatMoney, photoUrl, shotLabel, sortPhotos, statusLabel, typeLabel,
 } from '../constants';
 import { Modal, PhotoLightbox } from './ui';
 import { IconBook, IconCalendar, IconChevronLeft, IconChevronRight, IconGallery, IconPencil, IconTrash, IconX } from '../icons';
@@ -24,7 +24,7 @@ export function ItemDetail({
   onDelete: () => void;
   onViewMemory: () => void;
 }) {
-  const photos = item.photos || [];
+  const photos = sortPhotos(item.photos || []);
   const [active, setActive] = useState(0);
   const [lightbox, setLightbox] = useState(false);
   const thumbsRef = useRef<HTMLDivElement>(null);

@@ -492,7 +492,6 @@ code {
   transition: border-color 0.15s, background 0.15s;
 }
 .input:focus, .select:focus { border-color: rgba(255, 111, 156, 0.6); background: rgba(0, 0, 0, 0.4); }
-.input-sm, .select-sm { height: 34px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; }
 .select { width: auto; cursor: pointer; }
 .select option, .select optgroup { background: var(--surface); color: var(--text); }
 
@@ -695,19 +694,6 @@ code {
   margin-bottom: 5px;
 }
 .callout p { margin: 0; font-size: 13px; color: var(--muted); white-space: pre-wrap; line-height: 1.65; }
-
-.inline-alert {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 12px;
-  color: var(--gold);
-  background: var(--gold-soft);
-  border: 1px solid rgba(240, 201, 135, 0.25);
-}
-.inline-alert svg { flex: 0 0 auto; margin-top: 2px; }
 
 /* Empty state */
 .empty {
@@ -1592,29 +1578,73 @@ button.stat:hover { background: var(--panel-hover); border-color: var(--border-s
 
 /* Photos in Editor */
 .photos-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.dropzone {
-  width: 100%;
-  padding: 14px;
+.photo-upload { width: 100%; }
+.photo-editor-form { display: flex; flex-direction: column; min-height: 0; }
+.photo-editor-fields { display: grid; gap: 12px; }
+.photo-dropzone {
+  position: relative;
+  height: clamp(160px, 48dvh, 420px);
   border-radius: 12px;
   border: 1.5px dashed var(--border-strong);
-  background: rgba(255, 255, 255, 0.025);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-align: left;
+  background: var(--surface-2);
   transition: border-color 0.15s, background 0.15s;
 }
-.dropzone:hover, .dropzone.drag-over { border-color: var(--rose); background: var(--rose-soft); }
-.dropzone span { flex: 1; display: flex; flex-direction: column; }
-.dropzone strong { font-size: 13px; }
-.dropzone small { font-size: 11.5px; color: var(--muted); }
-.dropzone-cam { color: var(--muted-2); }
+.photo-dropzone:hover, .photo-dropzone.drag-over { border-color: var(--rose); }
+.photo-dropzone.drag-over { background: var(--rose-soft); }
+.photo-dropzone-picker {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+}
+.photo-dropzone-picker[aria-disabled="true"] { cursor: wait; }
+.photo-dropzone-picker img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+  object-fit: contain;
+}
+.photo-dropzone-label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
+.photo-dropzone-label > span { display: flex; gap: 8px; align-items: center; justify-content: center; }
+.photo-dropzone-label small { font-weight: 400; color: var(--muted); }
+.has-photo .photo-dropzone-label {
+  position: absolute;
+  bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(12, 8, 16, 0.82);
+  border: 1px solid var(--border-strong);
+}
+.photo-dropzone :is(.photo-editor-prev, .photo-editor-next) {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(12, 8, 16, 0.82);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+}
+.photo-editor-prev { left: 8px; }
+.photo-editor-next { right: 8px; }
+.photo-dropzone :is(.photo-editor-prev, .photo-editor-next):hover:not(:disabled) { border-color: var(--rose); }
 
 .photo-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 
 @media (max-width: 760px) {
   .overlay:has(> :is(.detail-sheet, .editor-sheet, .chat-log-sheet)) { padding: 0; }
   .overlay:has(> .character-sheet) { padding: 16px; }
+  .overlay:has(> .photo-editor-sheet) { padding: 12px; }
+  .sheet.photo-editor-sheet {
+    height: auto;
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 24px);
+    border: 1px solid var(--border-strong);
+    border-radius: 16px;
+  }
+  .photo-editor-sheet .sheet-head, .photo-editor-sheet .sheet-body { padding: 12px; }
+  .photo-editor-sheet .sheet-foot { padding: 10px 12px; }
+  .photo-dropzone { height: clamp(150px, 42dvh, 330px); }
   .sheet:is(.detail-sheet, .editor-sheet, .chat-log-sheet) {
     height: 100dvh;
     max-height: 100dvh;
@@ -1639,38 +1669,17 @@ button.stat:hover { background: var(--panel-hover); border-color: var(--border-s
   .editor-sheet .sheet-actions { justify-content: flex-end; flex-wrap: wrap; }
 }
 
-.photo-card {
+.photo-thumb {
+  position: relative;
+  aspect-ratio: 1;
   border-radius: 11px;
   overflow: hidden;
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--surface-2);
 }
-.photo-thumb { position: relative; aspect-ratio: 1; background: var(--surface-2); }
-.photo-preview { position: absolute; inset: 0; width: 100%; cursor: zoom-in; }
+.photo-preview { position: absolute; inset: 0; width: 100%; }
 .photo-preview:focus-visible { outline-offset: -3px; }
 .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.photo-index {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  padding: 1px 6px;
-  border-radius: 6px;
-  font-size: 10px;
-  background: rgba(12, 8, 16, 0.78);
-  pointer-events: none;
-}
-.photo-full {
-  position: absolute;
-  bottom: 6px;
-  left: 6px;
-  padding: 1px 6px;
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 700;
-  color: #190a13;
-  background: var(--rose);
-  pointer-events: none;
-}
 .photo-del {
   position: absolute;
   top: 6px;
@@ -1684,7 +1693,6 @@ button.stat:hover { background: var(--panel-hover); border-color: var(--border-s
   color: var(--text);
 }
 .photo-del:hover { background: var(--danger); }
-.photo-meta { padding: 7px; display: flex; flex-direction: column; gap: 5px; }
 .photo-empty {
   padding: 28px 14px;
   border-radius: 12px;

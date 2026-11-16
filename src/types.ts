@@ -314,7 +314,8 @@ export interface HfApi {
     discardDraft(id: string): Promise<boolean>;
   };
   photos: {
-    add(itemId: string): Promise<Photo[]>;
+    add(itemId: string, multiple?: boolean): Promise<Photo[]>;
+    addFiles?(files: File[]): Promise<Photo[]>;
     addPaths(itemId: string, paths: string[]): Promise<Photo[]>;
     pathForFile(file: File): string;
   };

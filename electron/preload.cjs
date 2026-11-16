@@ -42,7 +42,7 @@ contextBridge.exposeInMainWorld('hf', {
     discardDraft: (id) => ipcRenderer.invoke('items:discardDraft', id),
   },
   photos: {
-    add: (itemId) => ipcRenderer.invoke('photos:add', { itemId }),
+    add: (itemId, multiple) => ipcRenderer.invoke('photos:add', { itemId, multiple }),
     addPaths: (itemId, paths) => ipcRenderer.invoke('photos:addPaths', { itemId, paths }),
     pathForFile: (file) => {
       try { return webUtils.getPathForFile(file); } catch { return ''; }

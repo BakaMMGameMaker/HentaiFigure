@@ -10,7 +10,8 @@ const { pathToFileURL } = require('node:url');
 const { spawnSync } = require('node:child_process');
 
 const { Store } = require('./lib/store.cjs');
-const { RitualService, SHOT_LABELS, TYPE_LABELS, localDateKey } = require('./lib/ritual.cjs');
+const { RitualService, TYPE_LABELS, localDateKey } = require('./lib/ritual.cjs');
+const { SHOT_LABELS } = require('./lib/photo-catalog.mjs');
 const { testConnection, friendlyError } = require('./lib/deepseek.cjs');
 const { connectionTestInput, verifyVisionSettings } = require('./lib/vision-config.mjs');
 const { Updater } = require('./lib/updater.cjs');
@@ -485,17 +486,19 @@ function registerIpc() {
     return true;
   });
 
-  ipcMain.handle('photos:add', async (event, { itemId } = {}) => {
+  ipcMain.handle('photos:add', async (event, { itemId, multiple = true } = {}) => {
     if (!/^[A-Za-z0-9_-]{4,80}$/.test(String(itemId))) throw new Error('周边 ID 不合法。');
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择照片（可多选）',
-      properties: ['openFile', 'multiSelections'],
+      title: multiple ? '选择照片（可多选）' : '选择替换照片',
+      properties: multiple ? ['openFile', 'multiSelections'] : ['openFile'],
       filters: [
         { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] },
       ],
     });
     if (result.canceled || !result.filePaths.length) return [];
-    return importPhotoFiles(itemId, result.filePaths);
+    const photos = importPhotoFiles(itemId, result.filePaths);
+    if (!photos.length) throw new Error('没有可用的图片，请选择支持的图片格式（单张最多 60MB）。');
+    return photos;
   });
 
   ipcMain.handle('photos:addPaths', (event, { itemId, paths } = {}) => {

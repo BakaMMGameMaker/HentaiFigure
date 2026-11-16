@@ -8,7 +8,6 @@ export const VIEW_ITEM_PHOTOS: { type: string; function: { name: string; descrip
 export function createPhotoAccess(options: {
   photos: Photo[];
   history: ChatMessage[];
-  labels: Record<string, string>;
   config: { baseUrl: string; imageDetail: 'low' | 'high' };
   loadImage: (photo: Photo) => string | null;
 }): {
