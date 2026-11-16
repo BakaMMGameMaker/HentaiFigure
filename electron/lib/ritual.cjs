@@ -980,6 +980,7 @@ class RitualService {
           },
         });
         logRound.finishReason = result.finishReason;
+        logRound.response = { content: result.content, reasoning: result.reasoning };
 
         if (result.toolCalls?.length) {
           const assistantToolMessage = {

@@ -119,7 +119,10 @@ test('藏品开场只发送当前藏品资料，收藏室和相关记忆按工�
   }));
   let rounds = 0;
   const fetch = t.mock.method(globalThis, 'fetch', async () => ++rounds === 1
-    ? Response.json({ choices: [{ message: { tool_calls: toolCalls }, finish_reason: 'tool_calls' }] })
+    ? Response.json({ choices: [{
+      message: { content: '先查查收藏室。', reasoning_content: '准备查询藏品。', tool_calls: toolCalls },
+      finish_reason: 'tool_calls',
+    }] })
     : reply());
   const done = Promise.withResolvers();
   const service = new RitualService({
@@ -166,6 +169,10 @@ test('藏品开场只发送当前藏品资料，收藏室和相关记忆按工�
   assert.equal(savedLog.status, 'done');
   assert.deepEqual(savedLog.rounds.map(({ request }) => request), [first, second]);
   assert.deepEqual(savedLog.rounds[0].calls.map(({ name, result }) => [name, JSON.parse(result)]), Object.entries(results));
+  assert.deepEqual(savedLog.rounds.map(({ response }) => response), [
+    { content: '先查查收藏室。', reasoning: '准备查询藏品。' },
+    { content: '测试主动话题。', reasoning: '' },
+  ]);
 });
 
 test('重启保留全部对话日志，删除对话会清理日志且迟到的请求不会写回', async (t) => {

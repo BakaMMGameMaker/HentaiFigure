@@ -1011,7 +1011,10 @@ export class MobileEngine {
           signal: controller.signal,
           onRequest: (payload) => { logged.round = log.request(payload); },
         });
-        if (logged.round) logged.round.finishReason = result.finishReason;
+        if (logged.round) {
+          logged.round.finishReason = result.finishReason;
+          logged.round.response = { content: result.content, reasoning: result.reasoning };
+        }
         if (result.toolCalls.length) {
           const assistantMessage = {
             role: 'assistant', content: result.content || null,

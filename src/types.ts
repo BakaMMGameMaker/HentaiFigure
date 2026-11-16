@@ -273,6 +273,7 @@ export interface FreeChatLogRound {
   };
   calls: { id: string; name: string; args: string; result: string }[];
   finishReason?: string;
+  response?: { content: string; reasoning: string };
 }
 
 export interface FreeChatLogRun {

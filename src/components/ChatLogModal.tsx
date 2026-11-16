@@ -1,51 +1,151 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { FreeChatLogRound, FreeChatLogRun } from '../types';
 import { cleanError } from '../utils';
 import { Modal, SheetHeader, Spinner } from './ui';
 
 const STATUS_LABEL = { running: '请求中', done: '已完成', stopped: '已停止', error: '失败' };
-const ROLES: Record<string, string> = { system: '系统提示词', user: '用户上下文', assistant: '管理员上下文', tool: '工具返回' };
+const ROLES: Record<string, string> = { system: '系统提示词', user: '用户上下文', assistant: '管理员消息', tool: '工具返回' };
+type LogMessage = FreeChatLogRound['request']['messages'][number];
 
 function formatJson(text: string) {
   try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
 }
 
-function RequestRound({ round, index }: { round: FreeChatLogRound; index: number }) {
-  const { model, messages, tools, ...options } = round.request;
+function followUpContext(round: FreeChatLogRound, next?: FreeChatLogRound) {
+  const previous = round.request.messages;
+  const current = next?.request.messages ?? [];
+  let prefix = 0;
+  // 后续请求会在上一份消息快照末尾追加本轮的模型消息和工具结果。
+  while (prefix < previous.length && prefix < current.length &&
+    JSON.stringify(previous[prefix]) === JSON.stringify(current[prefix])) {
+    prefix += 1;
+  }
+  const added = current.slice(prefix);
+  const assistant = round.calls.length && added[0]?.role === 'assistant' && Array.isArray(added[0].tool_calls)
+    ? added.shift()
+    : undefined;
+  const callIds = new Set(round.calls.map(({ id }) => id));
+  const toolResults = new Map<string, LogMessage['content']>();
+  const remaining = added.filter((message) => {
+    const id = message.tool_call_id;
+    if (message.role !== 'tool' || typeof id !== 'string' || !callIds.has(id)) return true;
+    toolResults.set(id, message.content);
+    return false;
+  });
+  return { assistant, toolResults, remaining };
+}
+
+function MessageContent({ content }: { content: LogMessage['content'] }) {
+  if (typeof content === 'string') return content ? <pre>{content}</pre> : null;
+  return content?.map((part, index) => (
+    <pre key={index}>{part.type === 'text' ? part.text : JSON.stringify(part, null, 2)}</pre>
+  ));
+}
+
+function ContextMessage({ message, title, open }: { message: LogMessage; title?: string; open?: boolean }) {
+  const { role, content, ...fields } = message;
   return (
-    <details className="log-round" open={index === 0}>
-      <summary>
-        <strong>第 {index + 1} 次模型请求</strong>
-        <span>{model} · {messages.length} 条上下文 · {round.calls.length} 次工具调用</span>
-      </summary>
-      <div className="log-round-body">
-        <details className="log-entry">
-          <summary>请求参数与工具定义</summary>
-          <pre>{JSON.stringify({ model, ...options, ...(tools && { tools }) }, null, 2)}</pre>
-        </details>
-        {messages.map(({ role, content, ...fields }, i) => (
-          <details className="log-entry" key={i} open={index === 0 && role === 'system'}>
-            <summary>{i + 1}. {ROLES[role] || role} <span>· {role}</span></summary>
-            {content && (
-              typeof content === 'string' ? <pre>{content}</pre> : content.map((part, j) => (
-                <pre key={j}>{part.type === 'text' ? part.text : JSON.stringify(part, null, 2)}</pre>
-              ))
-            )}
-            {Object.keys(fields).length > 0 && <pre>{JSON.stringify(fields, null, 2)}</pre>}
-          </details>
-        ))}
-        {round.calls.map((call, i) => (
-          <details className="log-entry log-tool" key={`${i}-${call.id}`}>
-            <summary>工具调用 <code>{call.name}</code> <span>· {call.id}</span></summary>
-            <div className="log-entry-label">调用参数</div>
-            <pre>{formatJson(call.args)}</pre>
-            <div className="log-entry-label">执行结果</div>
-            <pre>{formatJson(call.result)}</pre>
-          </details>
-        ))}
-        {round.finishReason && <p className="muted small">结束原因 · {round.finishReason}</p>}
-      </div>
+    <details className="log-entry" open={open}>
+      <summary>{title ?? ROLES[role] ?? role}</summary>
+      <MessageContent content={content} />
+      {Object.keys(fields).length > 0 && <pre>{JSON.stringify(fields, null, 2)}</pre>}
     </details>
+  );
+}
+
+function ModelRequest({ round }: { round: FreeChatLogRound }) {
+  const { messages: _messages, ...options } = round.request;
+  return (
+    <details className="log-entry log-request">
+      <summary>
+        模型请求 <span>· {options.model}</span>
+      </summary>
+      {round.finishReason && <div className="log-entry-label">结束原因 · {round.finishReason}</div>}
+      <div className="log-entry-label">请求参数与工具定义</div>
+      <pre>{JSON.stringify(options, null, 2)}</pre>
+    </details>
+  );
+}
+
+function ToolCall({ call, sentResult }: { call: FreeChatLogRound['calls'][number]; sentResult?: LogMessage['content'] }) {
+  return (
+    <details className="log-entry log-tool">
+      <summary>工具调用 <code>{call.name}</code></summary>
+      <div className="log-entry-label">调用 ID · {call.id}</div>
+      <div className="log-entry-label">调用参数</div>
+      <pre>{formatJson(call.args)}</pre>
+      <div className="log-entry-label">执行结果</div>
+      <pre>{formatJson(call.result)}</pre>
+      {sentResult !== undefined && sentResult !== call.result && (
+        <details className="log-entry log-sent-result">
+          <summary>发送给模型的结果</summary>
+          <MessageContent content={sentResult} />
+        </details>
+      )}
+    </details>
+  );
+}
+
+function LogTimeline({ run }: { run: FreeChatLogRun }) {
+  const initial = run.rounds[0]?.request.messages ?? [];
+  const last = initial.at(-1);
+  const input = last?.role === 'user' ? last : undefined;
+  const history = input ? initial.slice(0, -1) : initial;
+  return (
+    <ol className="log-timeline" role="list" aria-label="生成时间线">
+      {history.length > 0 && (
+        <li>
+          <details className="log-entry">
+            <summary>初始上下文 <span>· {history.length} 条</span></summary>
+            <div className="log-initial-context">
+              {history.map((message, index) => <ContextMessage key={index} message={message} />)}
+            </div>
+          </details>
+        </li>
+      )}
+      {input && <li className="log-text-event"><ContextMessage message={input} open /></li>}
+      {run.rounds.map((round, index) => {
+        const { assistant, toolResults, remaining } = followUpContext(round, run.rounds[index + 1]);
+        const content = round.response?.content ?? assistant?.content ?? null;
+        const reasoning = round.response?.reasoning ?? assistant?.reasoning_content;
+        const hasReasoning = typeof reasoning === 'string' && reasoning.length > 0;
+        return (
+          <Fragment key={index}>
+            <li><ModelRequest round={round} /></li>
+            {(content || hasReasoning) && (
+              <li className="log-text-event">
+                <div className="log-entry log-reply">
+                  {content && (
+                    <>
+                      <div className="log-entry-label">{round.calls.length ? '管理员消息' : '管理员回复'}</div>
+                      <MessageContent content={content} />
+                    </>
+                  )}
+                  {hasReasoning && (
+                    <details>
+                      <summary>思考过程</summary>
+                      <pre>{reasoning}</pre>
+                    </details>
+                  )}
+                </div>
+              </li>
+            )}
+            {round.calls.map((call, callIndex) => (
+              <li key={callIndex}><ToolCall call={call} sentResult={toolResults.get(call.id)} /></li>
+            ))}
+            {remaining.map((message, messageIndex) => (
+              <li key={messageIndex}>
+                <ContextMessage message={message} title={message.role === 'user' && Array.isArray(message.content) ? '补充图片' : undefined} />
+              </li>
+            ))}
+          </Fragment>
+        );
+      })}
+      <li className="log-status">
+        <span>{STATUS_LABEL[run.status]}</span>
+        {run.error && <p className="chat-error" role="alert">{run.error}</p>}
+      </li>
+    </ol>
   );
 }
 
@@ -94,10 +194,7 @@ export function ChatLogModal({ threadId, onClose }: { threadId: string; onClose:
                 ))}
               </select>
             </label>
-            {selected.error && <p className="chat-error" role="alert">{selected.error}</p>}
-            <div className="log-rounds" key={selected.id}>
-              {selected.rounds.map((round, index) => <RequestRound key={index} round={round} index={index} />)}
-            </div>
+            <LogTimeline key={selected.id} run={selected} />
           </>
         ) : <p className="muted">这段对话还没有模型请求记录。</p>}
       </div>

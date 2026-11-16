@@ -4,7 +4,7 @@ export const VIEW_ITEM_PHOTOS = {
   type: 'function',
   function: {
     name: 'view_item_photos',
-    description: '按当前藏品的照片编号查看实际图片。根据当前话题只挑需要的照片，可以后续再查看其他角度，也可以重看。照片标签和备注只是索引，谈到画面细节前应先看图。',
+    description: '按当前藏品的照片编号查看实际图片。根据话题挑选想看的照片，可以一次性看完，也可以先只看一部分，后续再查看其他照片，可以重看。照片标签和备注只是索引，聊画面细节前先看图。',
     parameters: {
       type: 'object',
       properties: {

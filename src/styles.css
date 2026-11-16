@@ -1824,14 +1824,30 @@ button.stat:hover { background: var(--panel-hover); border-color: var(--border-s
 .chat-log-body { overscroll-behavior: contain; }
 .log-picker { display: grid; gap: 6px; margin-bottom: 16px; font-size: 12px; color: var(--muted); }
 .log-picker .select { width: min(100%, 320px); }
-.log-rounds, .log-round-body { display: grid; gap: 8px; }
-.log-round, .log-entry { border: 1px solid var(--border); border-radius: 10px; }
-.log-round > summary, .log-entry > summary { padding: 9px 12px; cursor: pointer; overflow-wrap: anywhere; }
-.log-round > summary span { display: block; margin-top: 2px; }
-.log-round > summary span, .log-entry > summary span, .log-entry-label { font-size: 12px; color: var(--muted); }
-.log-round-body { padding: 0 10px 10px; }
-.log-entry { background: var(--bg); }
-.log-entry-label { padding: 8px 12px 0; }
+.log-timeline {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 0 4px;
+  padding: 0 0 0 14px;
+  border-inline-start: 1px solid var(--border);
+  list-style: none;
+}
+.log-timeline > li { position: relative; min-width: 0; }
+.log-timeline > li::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 16px;
+  inset-inline-start: -18px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.log-timeline > .log-text-event::before { background: var(--rose); }
+.log-entry { border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.log-entry summary { padding: 9px 12px; cursor: pointer; overflow-wrap: anywhere; }
+.log-entry > summary span, .log-entry-label, .log-status { font-size: 12px; color: var(--muted); }
+.log-entry-label { padding: 8px 12px 0; overflow-wrap: anywhere; }
 .log-entry pre {
   margin: 0;
   padding: 10px 12px;
@@ -1841,7 +1857,16 @@ button.stat:hover { background: var(--panel-hover); border-color: var(--border-s
   font: 12px/1.65 "Cascadia Code", Consolas, monospace;
 }
 .log-entry-label + pre { border: 0; padding-top: 4px; }
+.log-initial-context { display: grid; gap: 6px; padding: 0 8px 8px; }
+.log-sent-result { margin: 0 8px 8px; }
+.log-request { background: transparent; }
+.log-request > summary, .log-sent-result > summary, .log-reply summary { color: var(--muted); font-size: 13px; }
+.log-text-event > .log-entry > pre { font: inherit; line-height: 1.65; }
+.log-reply > details { border-top: 1px solid var(--border); }
+.log-reply > details:first-child { border-top: 0; }
 .log-tool > summary code { color: var(--rose); }
+.log-status { padding: 11px 0 6px; }
+.log-status .chat-error { margin: 6px 0 0; }
 
 .chat-item-banner {
   margin: 10px 16px 0;
