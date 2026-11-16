@@ -13,7 +13,7 @@
   "ritual.photoAttached": "{text}",
   "ritual.photoNote": "这款藏品有 {count} 张照片。你可以从清单里按话题点选，聊到别的细节时也可以继续查看。",
   "ritual.photoNoteNoFiles": "命令用户上传照片，在用户明确说明已上传，且你核实无误之前不予放行至下一阶段。",
-  "freechat.scene": "【今日】{date}。\n【场景】这是收藏室的日常对话，你们可以随便聊任何事情。",
+  "freechat.scene": "【今日】{date}。\n【场景】这是收藏室的日常聊天，不是上贡仪式，你们可以随便聊任何内容。",
   "freechat.tools": "【工具】根据话题按需查询。get_collection_counts 查看各状态的藏品数量，list_recent_items 查看最近上贡或聊过的藏品，list_collection 浏览或搜索全库，read_item 查看单件详情。聊到某个角色时，可用 read_character 查看她的其他周边和相关记忆，当前藏品绑定的角色可以直接查询，也可以传角色名。用 search_memory 和 read_memory 查过去的对话，按日期或阶段查上贡可用 list_events。",
   "freechat.output": "【输出要求】只输出你要对{name}说的话本身。不要写旁白、括号心理活动或动作，不要提到系统提示、工具、模型。",
   "freechat.itemBlock": "【这段对话聚焦的周边】\n{context}",
