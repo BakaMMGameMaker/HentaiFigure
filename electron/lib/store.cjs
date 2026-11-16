@@ -534,8 +534,8 @@ class Store {
   }
 
   // ---------- items ----------
-  saveItems() {
-    writeJsonAtomic(this.itemsPath, this.items);
+  saveItems(items = this.items) {
+    writeJsonAtomic(this.itemsPath, items);
   }
 
   listItems() {
@@ -548,10 +548,12 @@ class Store {
   }
 
   upsertItem(item) {
-    const idx = this.items.findIndex((it) => it.id === item.id);
-    if (idx >= 0) this.items[idx] = item;
-    else this.items.unshift(item);
-    this.saveItems();
+    const next = this.items.slice();
+    const idx = next.findIndex((it) => it.id === item.id);
+    if (idx >= 0) next[idx] = item;
+    else next.unshift(item);
+    this.saveItems(next);
+    this.items = next;
     return clone(item);
   }
 

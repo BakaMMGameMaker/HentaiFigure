@@ -177,16 +177,27 @@ function makeAvatarDataUrl(filePath) {
   return `data:image/jpeg;base64,${buffer.toString('base64')}`;
 }
 
+function referencedImages(items) {
+  return new Set(items.flatMap((item) => (item.photos || []).flatMap((photo) =>
+    [photo.file, photo.thumbFile].filter(Boolean).map((file) => path.resolve(store.dataDir, file))
+  )));
+}
+
+function pruneItemImages(itemId, referenced) {
+  const dir = path.join(store.imagesDir, itemId);
+  if (!fs.lstatSync(dir, { throwIfNoEntry: false })?.isDirectory()) return;
+  for (const file of fs.readdirSync(dir, { withFileTypes: true })) {
+    const abs = path.join(dir, file.name);
+    if (file.isFile() && !referenced.has(abs)) {
+      try { fs.unlinkSync(abs); } catch {}
+    }
+  }
+}
+
 function cleanupOrphanImages() {
   try {
     const items = store.listItems();
-    const referenced = new Set();
-    for (const item of items) {
-      for (const p of item.photos || []) {
-        if (p.file) referenced.add(path.resolve(store.dataDir, p.file));
-        if (p.thumbFile) referenced.add(path.resolve(store.dataDir, p.thumbFile));
-      }
-    }
+    const referenced = referencedImages(items);
     for (const entry of fs.readdirSync(store.imagesDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const itemExists = items.some((i) => i.id === entry.name);
@@ -194,12 +205,7 @@ function cleanupOrphanImages() {
         fs.rmSync(path.join(store.imagesDir, entry.name), { recursive: true, force: true });
         continue;
       }
-      for (const file of fs.readdirSync(path.join(store.imagesDir, entry.name))) {
-        const abs = path.resolve(store.imagesDir, entry.name, file);
-        if (!referenced.has(abs) && fs.statSync(abs).isFile()) {
-          try { fs.unlinkSync(abs); } catch {}
-        }
-      }
+      pruneItemImages(entry.name, referenced);
     }
   } catch (err) {
     console.warn('orphan cleanup failed', err);
@@ -459,6 +465,9 @@ function registerIpc() {
   ipcMain.handle('items:save', (event, input) => {
     const item = normalizeItem(input);
     const saved = store.upsertItem(item);
+    try { pruneItemImages(saved.id, referencedImages(store.listItems())); } catch (err) {
+      console.warn('photo cleanup failed', err);
+    }
     return saved;
   });
   ipcMain.handle('items:delete', (event, id) => {
@@ -468,9 +477,11 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle('items:discardDraft', (event, id) => {
-    if (store.getItem(id)) return false;
-    const dir = path.join(store.imagesDir, String(id));
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{4,80}$/.test(id)) return false;
+    pruneItemImages(id, referencedImages(store.listItems()));
+    if (!store.getItem(id)) {
+      try { fs.rmdirSync(path.join(store.imagesDir, id)); } catch {}
+    }
     return true;
   });
 
@@ -491,35 +502,6 @@ function registerIpc() {
     const list = Array.isArray(paths) ? paths.filter((p) => typeof p === 'string').slice(0, 40) : [];
     if (!list.length) return [];
     return importPhotoFiles(itemId, list);
-  });
-
-  ipcMain.handle('photos:remove', (event, { itemId, photoId } = {}) => {
-    if (!/^[A-Za-z0-9_-]{4,80}$/.test(String(itemId))) throw new Error('周边 ID 不合法。');
-    const item = store.getItem(itemId);
-    if (item) {
-      const photos = item.photos || [];
-      if (photos.length <= 1) throw new Error('至少要保留一张照片。');
-      const target = photos.find((p) => p.id === photoId);
-      if (!target) return true;
-      if (item.status === 'owned' && item.type === 'figure' && target.shot === 'full' && !photos.some((p) => p.shot === 'full' && p.id !== photoId)) {
-        throw new Error('已拥有的手办至少要保留一张全身照。');
-      }
-    }
-    const dir = path.join(store.imagesDir, itemId);
-    if (fs.existsSync(dir)) {
-      const base = path.join(dir, String(photoId));
-      for (const file of fs.readdirSync(dir)) {
-        if (file === path.basename(base) || file.startsWith(`${photoId}.`)) {
-          try { fs.unlinkSync(path.join(dir, file)); } catch {}
-        }
-      }
-    }
-    if (item) {
-      item.photos = item.photos.filter((p) => p.id !== photoId);
-      item.updatedAt = Date.now();
-      store.upsertItem(item);
-    }
-    return true;
   });
 
   ipcMain.handle('ritual:state', (event, day) => ritual.getState(day || localDateKey()));
@@ -551,6 +533,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('chat:free:state', () => ritual.freeChatState());
+  ipcMain.handle('chat:free:logs', (event, threadId) => ritual.freeChatLog.list(threadId));
   ipcMain.handle('chat:free:threads', () => ritual.freeThreads());
   ipcMain.handle('chat:free:select', (event, threadId) => ritual.freeSelectThread(String(threadId || '')));
   ipcMain.handle('chat:free:new', (event, title) => ritual.freeNewThread(typeof title === 'string' ? title : undefined));

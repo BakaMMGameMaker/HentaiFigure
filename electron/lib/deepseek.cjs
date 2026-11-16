@@ -107,6 +107,7 @@ async function streamChat({
   signal,
   onDelta,
   onReasoning,
+  onRequest,
   maxTokens,
 }) {
   if (!apiKey) throw new ApiError('missing key', { code: 'NO_KEY' });
@@ -124,6 +125,7 @@ async function streamChat({
     payload.tool_choice = 'auto';
   }
   if (maxTokens) payload.max_tokens = maxTokens;
+  onRequest?.(payload);
 
   let res;
   try {

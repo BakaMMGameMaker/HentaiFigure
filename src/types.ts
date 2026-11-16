@@ -259,6 +259,30 @@ export interface FreeChatState {
   dailyChatTime: string;
   updatedAt?: number;
 }
+
+export interface FreeChatLogRound {
+  request: {
+    model: string;
+    messages: {
+      role: string;
+      content: string | ({ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string; detail?: string } })[] | null;
+      [key: string]: unknown;
+    }[];
+    tools?: unknown[];
+    [key: string]: unknown;
+  };
+  calls: { id: string; name: string; args: string; result: string }[];
+  finishReason?: string;
+}
+
+export interface FreeChatLogRun {
+  id: number;
+  startedAt: number;
+  status: 'running' | 'done' | 'stopped' | 'error';
+  error?: string;
+  rounds: FreeChatLogRound[];
+}
+
 export interface HfApi {
   app: { info(): Promise<AppInfo> };
   window: {
@@ -291,7 +315,6 @@ export interface HfApi {
   photos: {
     add(itemId: string): Promise<Photo[]>;
     addPaths(itemId: string, paths: string[]): Promise<Photo[]>;
-    remove(itemId: string, photoId: string): Promise<boolean>;
     pathForFile(file: File): string;
   };
   ritual: {
@@ -308,6 +331,7 @@ export interface HfApi {
     generate(sessionId: string): Promise<{ started: boolean }>;
     stop(sessionId: string): Promise<boolean>;
     freeState(): Promise<FreeChatState>;
+    freeLogs(threadId: string): Promise<FreeChatLogRun[]>;
     freeSend(text: string, threadId?: string, images?: string[]): Promise<{ message: ChatMessage; threadId: string }>;
     freeGenerate(forceNew?: boolean, threadId?: string): Promise<{ started: boolean }>;
     freeStop(threadId?: string): Promise<boolean>;

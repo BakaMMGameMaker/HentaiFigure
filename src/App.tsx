@@ -19,7 +19,6 @@ type ToastState = { id: number; text: string; kind: 'ok' | 'error' | 'info' } | 
 type EditorState = {
   draftId: string;
   item: Item | null;
-  isNew: boolean;
   presetStatus?: ItemStatus;
 };
 
@@ -164,7 +163,7 @@ export default function App() {
   const openAdd = async (presetStatus?: ItemStatus) => {
     try {
       const draftId = await window.hf.items.newId();
-      setEditor({ draftId, item: null, isNew: true, presetStatus });
+      setEditor({ draftId, item: null, presetStatus });
     } catch (err) {
       showToast(cleanError(err), 'error');
     }
@@ -172,19 +171,18 @@ export default function App() {
 
   const openEdit = (item: Item) => {
     setDetailItemId(null);
-    setEditor({ draftId: item.id, item, isNew: false });
+    setEditor({ draftId: item.id, item });
   };
 
   const closeEditor = async () => {
-    if (editor?.isNew) {
-      try { await window.hf.items.discardDraft(editor.draftId); } catch {}
-    }
     setEditor(null);
+    if (editor) await window.hf.items.discardDraft(editor.draftId).catch(() => {});
   };
 
-  const handleSaved = async (saved: Item, meta: { mode: 'create' | 'update'; changes: ItemChange[] }) => {
+  const handleSaved = async (saved: Item, meta: { mode: 'create' | 'update'; changes: ItemChange[]; notify: boolean }) => {
     setEditor(null);
-    await refreshData();
+    await refreshData().catch((err) => showToast(cleanError(err), 'error'));
+    if (!meta.notify) return;
     try {
       const result = await window.hf.chat.itemIntro({ itemId: saved.id, mode: meta.mode, changes: meta.changes });
       if (result?.threadId) {
@@ -192,6 +190,13 @@ export default function App() {
         setView('chat');
         await refreshFreeChat();
         showToast(meta.mode === 'create' ? '管理员想跟你聊聊新收的这位。' : '管理员注意到资料变了。', 'ok');
+      } else if (result?.skipped) {
+        const reasons: Record<string, string> = {
+          'no-key': '请先配置 API Key',
+          'vision-model': '请先验证模型的看图能力',
+          busy: '管理员正在处理另一段对话',
+        };
+        showToast(`藏品已保存。告知管理员失败：${reasons[result.skipped] || '暂时无法发起对话'}。`, 'info');
       }
     } catch (err) {
       showToast(cleanError(err), 'error');

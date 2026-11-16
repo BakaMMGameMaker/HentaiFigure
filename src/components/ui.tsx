@@ -82,12 +82,14 @@ export function Modal({
 export function SheetHeader({
   eyebrow,
   title,
+  titleId,
   onClose,
   onBack,
   actions,
 }: {
   eyebrow?: ReactNode;
   title: ReactNode;
+  titleId?: string;
   onClose?: () => void;
   onBack?: () => void;
   actions?: ReactNode;
@@ -101,7 +103,7 @@ export function SheetHeader({
       )}
       <div className="sheet-head-text">
         {eyebrow && <div className="eyebrow">{eyebrow}</div>}
-        <h2>{title}</h2>
+        <h2 id={titleId}>{title}</h2>
       </div>
       {actions}
       {onClose && (

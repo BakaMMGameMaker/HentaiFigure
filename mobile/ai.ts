@@ -66,6 +66,7 @@ async function sendChatRequest({
   maxTokens,
   temperature,
   signal,
+  onRequest,
 }: {
   config: ConnectionConfig;
   apiKey: string;
@@ -74,6 +75,7 @@ async function sendChatRequest({
   maxTokens?: number;
   temperature?: number;
   signal?: AbortSignal;
+  onRequest?: (payload: Record<string, unknown>) => void;
 }): Promise<ChatResult> {
   if (!apiKey) throw new ApiError('missing key', { code: 'NO_KEY' });
   const payload: Record<string, any> = {
@@ -87,6 +89,7 @@ async function sendChatRequest({
     payload.tool_choice = 'auto';
   }
   if (maxTokens) payload.max_tokens = maxTokens;
+  onRequest?.(payload);
 
   let res: Response;
   try {

@@ -44,7 +44,6 @@ contextBridge.exposeInMainWorld('hf', {
   photos: {
     add: (itemId) => ipcRenderer.invoke('photos:add', { itemId }),
     addPaths: (itemId, paths) => ipcRenderer.invoke('photos:addPaths', { itemId, paths }),
-    remove: (itemId, photoId) => ipcRenderer.invoke('photos:remove', { itemId, photoId }),
     pathForFile: (file) => {
       try { return webUtils.getPathForFile(file); } catch { return ''; }
     },
@@ -64,6 +63,7 @@ contextBridge.exposeInMainWorld('hf', {
     generate: (sessionId) => ipcRenderer.invoke('chat:generate', sessionId),
     stop: (sessionId) => ipcRenderer.invoke('chat:stop', sessionId),
     freeState: () => ipcRenderer.invoke('chat:free:state'),
+    freeLogs: (threadId) => ipcRenderer.invoke('chat:free:logs', threadId),
     freeSend: (text, threadId, images) => ipcRenderer.invoke('chat:free:send', { text, threadId, images }),
     freeGenerate: (forceNew, threadId) => ipcRenderer.invoke('chat:free:generate', { forceNew, threadId }),
     freeStop: (threadId) => ipcRenderer.invoke('chat:free:stop', threadId),

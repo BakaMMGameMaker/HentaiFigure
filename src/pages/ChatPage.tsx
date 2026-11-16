@@ -5,9 +5,10 @@ import { itemCover, photoUrl } from '../constants';
 import { loadImage, readFileAsDataUrl, resizeDataUrl } from '../image';
 import { cleanError, cx, groupThreads } from '../utils';
 import { ImageLightbox, ManagerAvatar, Modal, Spinner, TypingDots, confirmDialog } from '../components/ui';
+import { ChatLogModal } from '../components/ChatLogModal';
 import {
-  IconAlert, IconArrowLeft, IconChat, IconChevronRight, IconClock, IconImage, IconMore,
-  IconPencil, IconPlus, IconSend, IconSettings, IconSparkles, IconStop, IconTrash, IconX,
+  IconAlert, IconArrowLeft, IconBook, IconChat, IconChevronRight, IconClock, IconImage, IconMore,
+  IconPencil, IconPlus, IconSend, IconSparkles, IconStop, IconTrash, IconX,
 } from '../icons';
 
 type ThreadListProps = {
@@ -169,6 +170,7 @@ export function ChatPage({
   const [sending, setSending] = useState(false);
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -591,9 +593,6 @@ export function ChatPage({
             <strong>收藏室管理员</strong>
             <span><span className="online-dot" /> {busy ? '正在说话…' : '在线'}</span>
           </div>
-          {!narrow && activeThread && (
-            <span className="chat-thread-title" title={activeThread.title}>{activeThread.title}</span>
-          )}
           <div className="chat-head-actions">
             {narrow && (
               <button type="button" className="btn btn-soft btn-sm" onClick={() => setDrawerOpen(true)}>
@@ -603,8 +602,8 @@ export function ChatPage({
             <button type="button" className="btn btn-soft btn-sm" onClick={() => void proactive()} disabled={busy || !apiKeySet}>
               <IconSparkles size={14} /> {narrow ? '挑话题' : '让她挑个话题'}
             </button>
-            <button type="button" className="icon-btn" onClick={onOpenSettings} title="设置" aria-label="设置">
-              <IconSettings size={17} />
+            <button type="button" className="btn btn-soft btn-sm" onClick={() => setLogOpen(true)} disabled={!loaded}>
+              <IconBook size={14} /> 日志
             </button>
           </div>
         </header>
@@ -802,6 +801,8 @@ export function ChatPage({
           </div>
         </div>
       </section>
+
+      {logOpen && <ChatLogModal key={activeId} threadId={activeId} onClose={() => setLogOpen(false)} />}
 
       {renaming && (
         <Modal

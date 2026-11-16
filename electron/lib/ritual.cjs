@@ -4,6 +4,7 @@ const { streamChat, completeText, friendlyError, ApiError, dataUrlFromFile } =
   require('./deepseek.cjs');
 const promptLib = require('./prompts.cjs');
 const { chatMessageContent, validateChatImages } = require('./chat-attachments.mjs');
+const { FreeChatLog } = require('./free-chat-log.mjs');
 const { VIEW_ITEM_PHOTOS, createPhotoAccess } = require('./chat-photos.mjs');
 const { LIST_COLLECTION, MEMORY_LOOKUP_TOOLS, collectionPage, readMemory, searchMemory } = require('./chat-memory.mjs');
 const { assertVisionReady, isVisionReady } = require('./vision-config.mjs');
@@ -178,6 +179,7 @@ class RitualService {
     this.freeChatBusy = false;
     this.freeChatController = null;
     this.freeChatThreadId = null;
+    this.freeChatLog = new FreeChatLog((threadId) => this.sendEvent({ type: 'free:log', threadId, channel: 'freechat' }));
   }
 
   // ---------- dates ----------
@@ -855,6 +857,7 @@ class RitualService {
   freeDeleteThread(threadId) {
     if (this.freeChatBusy && this.freeChatThreadId === threadId) this.stopFreeChat(threadId);
     this.store.deleteThread(threadId);
+    this.freeChatLog.remove(threadId);
     return { state: this.freeChatState() };
   }
 
@@ -1017,23 +1020,25 @@ class RitualService {
     this.freeChatController = controller;
     const sessionId = thread.id;
     const eventBase = { sessionId, threadId: sessionId, channel: 'freechat' };
+    const log = this.freeChatLog.start(sessionId);
     this.sendEvent({ type: 'chat:start', ...eventBase, proactive });
     let full = '';
     let reasoning = '';
     const toolTrace = [];
-    const item = thread.itemId ? this.store.getItem(thread.itemId) : null;
-    const photoAccess = this.photoAccess(item, thread.messages);
-    const working = this.buildFreeChatMessages(thread, openingInstruction, photoAccess);
-    const tools = photoAccess ? [...MEMORY_TOOLS, VIEW_ITEM_PHOTOS] : MEMORY_TOOLS;
-
     try {
+      const item = thread.itemId ? this.store.getItem(thread.itemId) : null;
+      const photoAccess = this.photoAccess(item, thread.messages);
+      const working = this.buildFreeChatMessages(thread, openingInstruction, photoAccess);
+      const tools = photoAccess ? [...MEMORY_TOOLS, VIEW_ITEM_PHOTOS] : MEMORY_TOOLS;
       for (let round = 0; round < 4; round += 1) {
+        let logRound;
         const result = await streamChat({
           config,
           apiKey,
           messages: working,
           tools: round < 3 ? tools : undefined,
           signal: controller.signal,
+          onRequest: (payload) => { logRound = log.request(payload); },
           onDelta: (text) => {
             full += text;
             this.sendEvent({ type: 'chat:delta', ...eventBase, text });
@@ -1043,6 +1048,7 @@ class RitualService {
             this.sendEvent({ type: 'chat:reasoning', ...eventBase, text });
           },
         });
+        logRound.finishReason = result.finishReason;
 
         if (result.toolCalls?.length) {
           const assistantToolMessage = {
@@ -1073,6 +1079,7 @@ class RitualService {
               toolResult = { error: err?.message || '工具执行失败' };
             }
             const text = JSON.stringify(toolResult);
+            logRound.calls.push({ id: tc.id, name: tc.function.name, args: tc.function.arguments, result: text });
             toolTrace.push({ name: tc.function.name, args, result: truncate(text, 500) });
             this.sendEvent({
               type: 'chat:tool', ...eventBase, name: tc.function.name, args,
@@ -1115,6 +1122,7 @@ class RitualService {
         this.sendEvent({ type: 'chat:stopped', ...eventBase });
         return null;
       }
+      log.finish('done');
       this.sendEvent({
         type: 'chat:done', ...eventBase, message, proactive,
         ...(proactiveDay && { lastProactiveAt: message.ts }),
@@ -1125,10 +1133,13 @@ class RitualService {
       if (controller.signal.aborted) {
         this.sendEvent({ type: 'chat:stopped', ...eventBase });
       } else {
-        this.sendEvent({ type: 'chat:error', ...eventBase, message: friendlyError(err) });
+        const message = friendlyError(err);
+        log.finish('error', message.replaceAll(apiKey, '[API Key]'));
+        this.sendEvent({ type: 'chat:error', ...eventBase, message });
       }
       throw err;
     } finally {
+      log.finish('stopped');
       this.freeChatBusy = false;
       this.freeChatController = null;
       this.freeChatThreadId = null;

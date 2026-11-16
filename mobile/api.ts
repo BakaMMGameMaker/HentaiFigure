@@ -426,7 +426,6 @@ export function installMobileApi() {
         return out;
       },
       addPaths: async () => [],
-      remove: async () => true,
       pathForFile: () => '',
     },
     ritual: {
@@ -450,6 +449,7 @@ export function installMobileApi() {
       },
       stop: async (sessionId: string) => { await ready; engine.stop(sessionId); return true; },
       freeState: async () => { await ready; return engine.freeChatState(); },
+      freeLogs: async (threadId: string) => { await ready; return engine.freeChatLog.list(threadId); },
       freeSend: async (text, threadId, images) => { await ready; return engine.sendFreeChatUserMessage(text, threadId, images); },
       freeGenerate: async (forceNew?: boolean, threadId?: string) => {
         await ready;

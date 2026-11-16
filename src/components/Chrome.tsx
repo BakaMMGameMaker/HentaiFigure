@@ -70,8 +70,7 @@ export function Sidebar({
   return (
     <nav className="sidebar" aria-label="主导航">
       <button type="button" className="sidebar-add" onClick={onAdd}>
-        <IconPlus size={17} />
-        <span>添加周边</span>
+        添加周边
       </button>
       <div className="sidebar-nav">
         {NAV_ITEMS.map((item) => {
@@ -101,7 +100,7 @@ export function Sidebar({
           <span className="nav-icon"><IconSettings size={19} /></span>
           <span className="nav-text"><strong>设置</strong><small>API · 管理员 · 数据</small></span>
         </button>
-        {version && <div className="sidebar-version">v{version} · 本地运行</div>}
+        {version && <div className="sidebar-version">v{version}</div>}
       </div>
     </nav>
   );

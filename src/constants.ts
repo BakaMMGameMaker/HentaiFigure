@@ -17,21 +17,21 @@ export const TYPE_OPTIONS: { value: ItemType; label: string }[] = [
   { value: 'other', label: '其他周边' },
 ];
 
-export const SHOT_OPTIONS: { value: Shot; label: string; group: 'basic' | 'part' }[] = [
-  { value: 'promo', label: '宣传图', group: 'basic' },
-  { value: 'real', label: '实物图', group: 'basic' },
-  { value: 'full', label: '全身照', group: 'basic' },
-  { value: 'face', label: '脸蛋', group: 'part' },
-  { value: 'armpit', label: '腋下', group: 'part' },
-  { value: 'chest', label: '胸部', group: 'part' },
-  { value: 'back', label: '美背', group: 'part' },
-  { value: 'belly', label: '肚子', group: 'part' },
-  { value: 'private', label: '私处', group: 'part' },
-  { value: 'butt', label: '屁股', group: 'part' },
-  { value: 'underSkirt', label: '裙底', group: 'part' },
-  { value: 'thigh', label: '大腿', group: 'part' },
-  { value: 'feet', label: '玉足', group: 'part' },
-  { value: 'other', label: '其他', group: 'basic' },
+export const SHOT_OPTIONS: { value: Shot; label: string }[] = [
+  { value: 'promo', label: '宣传图' },
+  { value: 'real', label: '实物图' },
+  { value: 'full', label: '全身照' },
+  { value: 'face', label: '脸蛋' },
+  { value: 'armpit', label: '腋下' },
+  { value: 'chest', label: '胸部' },
+  { value: 'back', label: '美背' },
+  { value: 'belly', label: '肚子' },
+  { value: 'private', label: '私处' },
+  { value: 'butt', label: '屁股' },
+  { value: 'underSkirt', label: '裙底' },
+  { value: 'thigh', label: '大腿' },
+  { value: 'feet', label: '玉足' },
+  { value: 'other', label: '其他' },
 ];
 
 export const PHASE_META: Record<Phase, { label: string; key: string; desc: string; finish: string }> = {

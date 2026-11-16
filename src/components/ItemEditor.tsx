@@ -4,7 +4,7 @@ import {
   SHOT_OPTIONS, STATUS_META, TYPE_OPTIONS, formatMoney, photoUrl, shotLabel,
 } from '../constants';
 import { cleanError, cx, describeItemChanges, toNumberOrNull } from '../utils';
-import { Modal, SheetHeader, Spinner } from './ui';
+import { Modal, SheetHeader, Spinner, confirmDialog } from './ui';
 import {
   IconAlert, IconCamera, IconCheck, IconChevronDown, IconPlus, IconSearch, IconTrash, IconUpload, IconX,
 } from '../icons';
@@ -18,7 +18,7 @@ type Props = {
   isAndroid?: boolean;
   onCharactersChanged: (characters: Character[]) => void;
   onClose: () => void;
-  onSaved: (item: Item, meta: { mode: 'create' | 'update'; changes: ItemChange[] }) => void;
+  onSaved: (item: Item, meta: { mode: 'create' | 'update'; changes: ItemChange[]; notify: boolean }) => void;
   toast: (text: string, kind?: 'ok' | 'error' | 'info') => void;
 };
 
@@ -86,16 +86,19 @@ export function ItemEditor({
     dueDate: item?.dueDate || '',
   });
   const [photos, setPhotos] = useState<Photo[]>(item?.photos || []);
-  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState<'save' | 'notify' | null>(null);
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [confirmingPhoto, setConfirmingPhoto] = useState(false);
   const [localCharacters, setLocalCharacters] = useState<Character[]>(characters || []);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [characterForm, setCharacterForm] = useState<CharacterForm | null>(null);
   const [characterBusy, setCharacterBusy] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const busy = Boolean(saving) || uploading || characterBusy || confirmingPhoto;
+  const close = () => { if (!busy) onClose(); };
 
   useEffect(() => { setLocalCharacters(characters || []); }, [characters]);
   useEffect(() => {
@@ -175,7 +178,7 @@ export function ItemEditor({
   };
 
   const addViaDialog = async () => {
-    if (uploading) return;
+    if (busy) return;
     setUploading(true);
     setError('');
     try {
@@ -188,9 +191,10 @@ export function ItemEditor({
     }
   };
 
-  const onDrop = async (event: DragEvent<HTMLDivElement>) => {
+  const onDrop = async (event: DragEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setDragOver(false);
+    if (busy) return;
     const files = Array.from(event.dataTransfer.files || []);
     if (!files.length) return;
     const paths = files.map((file) => window.hf.photos.pathForFile(file)).filter(Boolean);
@@ -216,6 +220,7 @@ export function ItemEditor({
   };
 
   const removePhoto = async (photo: Photo) => {
+    if (busy) return;
     if (photos.length <= 1) {
       setError('至少要保留一张照片。');
       return;
@@ -224,15 +229,22 @@ export function ItemEditor({
       setError('已拥有的手办至少要保留一张全身照。');
       return;
     }
-    try {
-      await window.hf.photos.remove(draftId, photo.id);
+    setConfirmingPhoto(true);
+    const confirmed = await confirmDialog({
+      title: '删除这张照片？',
+      message: '保存周边后会删除这张照片。',
+      confirmText: '删除照片',
+      danger: true,
+    });
+    setConfirmingPhoto(false);
+    if (confirmed) {
+      setError('');
       setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
-    } catch (err) {
-      setError(cleanError(err));
     }
   };
 
-  const submit = async () => {
+  const submit = async (notify: boolean) => {
+    if (busy) return;
     setError('');
     if (!form.name.trim()) {
       setError('先给她起个名字吧，比如「初音未来 睡莲 ver. 1/7」。');
@@ -250,7 +262,7 @@ export function ItemEditor({
       setError('补款日期格式不对。');
       return;
     }
-    setBusy(true);
+    setSaving(notify ? 'notify' : 'save');
     try {
       const saved = await window.hf.items.save({
         id: draftId,
@@ -268,22 +280,23 @@ export function ItemEditor({
         dueDate: form.dueDate,
         photos,
       });
-      const changes = describeItemChanges(item || null, saved, localCharacters);
+      const changes = notify ? describeItemChanges(item || null, saved, localCharacters) : [];
       toast(isNew ? '她住进收藏室了。' : '已经重新记好了。', 'ok');
-      onSaved(saved, { mode: isNew ? 'create' : 'update', changes });
+      onSaved(saved, { mode: isNew ? 'create' : 'update', changes, notify });
     } catch (err) {
       setError(cleanError(err));
     } finally {
-      setBusy(false);
+      setSaving(null);
     }
   };
 
   return (
-    <Modal size="xl" onClose={onClose} closeOnBackdrop={false} className="editor-sheet">
+    <Modal size="xl" onClose={close} closeOnBackdrop={false} className="editor-sheet" titleId="item-editor-title">
       <SheetHeader
         eyebrow={isNew ? 'NEW FIGURE' : 'EDIT FIGURE'}
         title={isNew ? '把新的她带进来' : '重新记一记她'}
-        onClose={onClose}
+        titleId="item-editor-title"
+        onClose={close}
       />
 
       <div className="editor-body">
@@ -550,40 +563,43 @@ export function ItemEditor({
         </section>
 
         <aside className="editor-photos">
-          <div className="photos-head">
-            <div>
-              <div className="block-title">照片</div>
-              <p className="muted small">
-                {form.status === 'owned' && form.type === 'figure'
-                  ? '全身照至少一张，其余部位可选。管理员会真的看图说话。'
-                  : '宣传图、实物图都可以。她之后会照着这些图撩你。'}
-              </p>
+          <div className="photos-toolbar">
+            <div className="photos-head">
+              <div>
+                <div className="block-title">照片</div>
+                <p className="muted small">
+                  {form.status === 'owned' && form.type === 'figure'
+                    ? '至少保留一张全身照。'
+                    : '至少保留一张照片。'}
+                </p>
+              </div>
+              <span className={cx('pill', needsFull && 'pill-warn')}>{photos.length} 张</span>
             </div>
-            <span className={cx('pill', needsFull && 'pill-warn')}>{photos.length} 张</span>
+
+            {needsFull && (
+              <div className="inline-alert">
+                <IconAlert size={15} />
+                请上传或标记一张全身照。
+              </div>
+            )}
+
+            <button
+              type="button"
+              className={cx('dropzone', dragOver && 'drag-over', uploading && 'is-uploading')}
+              onDragOver={(e) => { e.preventDefault(); if (!busy) setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => void onDrop(e)}
+              onClick={() => void addViaDialog()}
+              disabled={busy}
+            >
+              {uploading ? <Spinner /> : <IconUpload size={20} />}
+              <span>
+                <strong>{uploading ? '正在收下照片…' : '上传照片'}</strong>
+                <small>{isAndroid ? '点击从相册选择照片' : '点击选择，或把图片拖进来'}</small>
+              </span>
+              <IconCamera size={18} className="dropzone-cam" />
+            </button>
           </div>
-
-          {needsFull && (
-            <div className="inline-alert">
-              <IconAlert size={15} />
-              已拥有的手办还差一张「全身照」。在下面的照片上选一下标签就行。
-            </div>
-          )}
-
-          <button
-            type="button"
-            className={cx('dropzone', dragOver && 'drag-over', uploading && 'is-uploading')}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => void onDrop(e as unknown as DragEvent<HTMLDivElement>)}
-            onClick={() => void addViaDialog()}
-          >
-            {uploading ? <Spinner /> : <IconUpload size={20} />}
-            <span>
-              <strong>{uploading ? '正在收下照片…' : '上传照片'}</strong>
-              <small>{isAndroid ? '点击从相册选择照片' : '点击选择，或把图片拖进来'}</small>
-            </span>
-            <IconCamera size={18} className="dropzone-cam" />
-          </button>
 
           <div className="photo-list">
             {photos.map((photo, index) => (
@@ -595,6 +611,7 @@ export function ItemEditor({
                   <button
                     type="button"
                     className="photo-del"
+                    disabled={busy}
                     onClick={() => void removePhoto(photo)}
                     title="删除这张"
                     aria-label="删除这张"
@@ -607,17 +624,11 @@ export function ItemEditor({
                     value={photo.shot}
                     onChange={(e) => updatePhoto(photo.id, { shot: e.target.value as Shot })}
                     className="select select-sm"
+                    aria-label={`第 ${index + 1} 张照片的标签`}
                   >
-                    <optgroup label="基础">
-                      {SHOT_OPTIONS.filter((o) => o.group === 'basic').map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="身体细节（已拥有）">
-                      {SHOT_OPTIONS.filter((o) => o.group === 'part').map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </optgroup>
+                    {SHOT_OPTIONS.filter((o) => o.value !== 'other' || photo.shot === 'other').map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
                   </select>
                   <input
                     className="input input-sm"
@@ -641,12 +652,16 @@ export function ItemEditor({
       </div>
 
       <footer className="sheet-foot">
-        <div className="sheet-error">{error}</div>
+        <div className="sheet-error" role="alert">{error}</div>
         <div className="sheet-actions">
-          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>取消</button>
-          <button type="button" className="btn btn-primary" onClick={() => void submit()} disabled={busy || uploading}>
-            {busy ? <Spinner size={15} /> : <IconCheck size={16} />}
-            {isNew ? '收进收藏室' : '保存'}
+          <button type="button" className="btn btn-ghost" onClick={close} disabled={busy}>取消</button>
+          <button type="button" className="btn btn-soft" onClick={() => void submit(false)} disabled={busy}>
+            {saving === 'save' && <Spinner size={15} />}
+            保存
+          </button>
+          <button type="button" className="btn btn-primary" onClick={() => void submit(true)} disabled={busy}>
+            {saving === 'notify' && <Spinner size={15} />}
+            保存并告知管理员
           </button>
         </div>
       </footer>

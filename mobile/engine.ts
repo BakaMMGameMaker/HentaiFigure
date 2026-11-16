@@ -1,5 +1,5 @@
 import type {
-  Character, ChatMessage, ChatThread, FreeChatState, Item, Phase, RitualState, Session,
+  Character, ChatMessage, ChatThread, FreeChatLogRound, FreeChatState, Item, Phase, RitualState, Session,
 } from '../src/types';
 import {
   PHASE_META, PHASES, SHOT_OPTIONS, TYPE_OPTIONS, formatDateCN,
@@ -19,6 +19,7 @@ import {
 
 import { PROMPT_DEFAULTS, renderPrompt } from '../src/prompts';
 import { chatMessageContent, validateChatImages } from '../electron/lib/chat-attachments.mjs';
+import { FreeChatLog } from '../electron/lib/free-chat-log.mjs';
 import { VIEW_ITEM_PHOTOS, createPhotoAccess } from '../electron/lib/chat-photos.mjs';
 import { LIST_COLLECTION, MEMORY_LOOKUP_TOOLS, collectionPage, readMemory, searchMemory } from '../electron/lib/chat-memory.mjs';
 import { assertVisionReady, isVisionReady } from '../electron/lib/vision-config.mjs';
@@ -130,6 +131,7 @@ export class MobileEngine {
   freeChatBusy = false;
   freeChatThreadId: string | null = null;
   freeChatController: AbortController | null = null;
+  freeChatLog = new FreeChatLog((threadId) => this.emit({ type: 'free:log', threadId, channel: 'freechat' }));
   proactiveTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(store: MobileStore, emit: (event: any) => void) {
@@ -884,6 +886,7 @@ export class MobileEngine {
   async freeDeleteThread(threadId: string) {
     if (this.freeChatBusy && this.freeChatThreadId === threadId) this.stopFreeChat(threadId);
     await this.store.deleteThread(threadId);
+    this.freeChatLog.remove(threadId);
     return { state: this.freeChatState() };
   }
 
@@ -1043,23 +1046,27 @@ export class MobileEngine {
     this.freeChatController = controller;
     const sessionId = thread.id;
     const eventBase = { sessionId, threadId: sessionId, channel: 'freechat' };
+    const log = this.freeChatLog.start(sessionId);
     this.emit({ type: 'chat:start', ...eventBase, proactive });
-    const item = thread.itemId ? this.store.getItem(thread.itemId) : null;
-    const photoAccess = this.photoAccess(item, thread.messages);
-    const working = this.buildFreeChatMessages(thread, openingInstruction, photoAccess);
     const trace: any[] = [];
-    const tools = photoAccess ? [...MEMORY_TOOLS, VIEW_ITEM_PHOTOS] : MEMORY_TOOLS;
     let finalText = '';
 
     try {
+      const item = thread.itemId ? this.store.getItem(thread.itemId) : null;
+      const photoAccess = this.photoAccess(item, thread.messages);
+      const working = this.buildFreeChatMessages(thread, openingInstruction, photoAccess);
+      const tools = photoAccess ? [...MEMORY_TOOLS, VIEW_ITEM_PHOTOS] : MEMORY_TOOLS;
       for (let round = 0; round < 4; round += 1) {
+        const logged: { round?: FreeChatLogRound } = {};
         const result = await requestChat({
           config,
           apiKey,
           messages: working,
           tools: round < 3 ? tools : undefined,
           signal: controller.signal,
+          onRequest: (payload) => { logged.round = log.request(payload); },
         });
+        if (logged.round) logged.round.finishReason = result.finishReason;
         if (result.toolCalls.length) {
           const assistantMessage = {
             role: 'assistant', content: result.content || null,
@@ -1080,6 +1087,7 @@ export class MobileEngine {
               toolResult = { error: err?.message || '工具执行失败' };
             }
             const text = JSON.stringify(toolResult);
+            logged.round?.calls.push({ id: tc.id, name: tc.function.name, args: tc.function.arguments, result: text });
             trace.push({ name: tc.function.name, args, result: truncate(text, 500) });
             this.emit({ type: 'chat:tool', ...eventBase, name: tc.function.name, args, status: 'done', preview: truncate(text, 160) });
             working.push({
@@ -1110,6 +1118,7 @@ export class MobileEngine {
         this.emit({ type: 'chat:stopped', ...eventBase });
         return null;
       }
+      log.finish('done');
       this.emit({
         type: 'chat:done', ...eventBase, message, proactive,
         ...(proactiveDay && { lastProactiveAt: message.ts }),
@@ -1118,9 +1127,14 @@ export class MobileEngine {
       return { message, threadId: thread.id };
     } catch (err) {
       if (controller.signal.aborted) this.emit({ type: 'chat:stopped', ...eventBase });
-      else this.emit({ type: 'chat:error', ...eventBase, message: friendlyError(err) });
+      else {
+        const message = friendlyError(err);
+        log.finish('error', message.replaceAll(apiKey, '[API Key]'));
+        this.emit({ type: 'chat:error', ...eventBase, message });
+      }
       throw err;
     } finally {
+      log.finish('stopped');
       this.freeChatBusy = false;
       this.freeChatController = null;
       this.freeChatThreadId = null;
